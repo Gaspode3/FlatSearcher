@@ -1,5 +1,7 @@
 name: Перевірка сайтів (службове)
 on: workflow_dispatch
+permissions:
+  contents: write
 jobs:
   probe:
     runs-on: ubuntu-latest
@@ -20,7 +22,8 @@ jobs:
             "https://m.olx.ua/uk/nedvizhimost/kvartiry/prodazha-kvartir/lvov/" ; do
             i=$((i+1)); code=$(curl -sL -A "$UA" -H "Accept-Language: uk-UA,uk;q=0.9" -o pages/$i.html -w "%{http_code}" "$u"); echo "$i $code $(wc -c < pages/$i.html) $u" | tee -a pages/index.txt
           done
-      - uses: actions/upload-artifact@v4
-        with:
-          name: pages
-          path: pages
+      - name: Зберегти в гілку probe-pages
+        run: |
+          cd pages && git init -q -b probe-pages && git add -A
+          git -c user.name=bot -c user.email=bot@users.noreply.github.com commit -qm probe
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" probe-pages
