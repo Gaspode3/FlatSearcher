@@ -246,3 +246,25 @@ h1 { font-size: clamp(26px, 5vw, 38px); font-weight: 800; letter-spacing: -0.02e
 .alsoon { margin: 0; font-size: 13px; color: var(--muted); }
 .alsoon a { color: var(--accent); font-weight: 700; text-decoration: none; margin-left: 4px; }
 .card.suspicious .gallery { opacity: .85; }
+
+.market { max-width: 1200px; margin: 16px auto 0; padding-inline: 16px; display: flex; gap: 0; }
+.market button {
+  flex: 0 0 auto; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  padding: 9px 16px; font-weight: 700; font-size: 15px;
+}
+.market button:first-child { border-radius: 12px 0 0 12px; }
+.market button:last-child { border-radius: 0 12px 12px 0; border-left: 0; }
+.market button.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.complexes { max-width: 1200px; margin: 0 auto; }
+.complexes[hidden] { display: none; }
+.cx-head h2, .resale-h { font-size: 20px; margin: 18px 16px 8px; }
+.cx-head .row { padding-inline: 16px; }
+.cx-head .count { padding-inline: 16px; }
+.complexes .grid { padding-bottom: 8px; }
+.resale-h { border-top: 1px solid var(--line); padding-top: 18px; }
+.cx-rooms { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.cx-rooms li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 2px 8px; font-size: 14px; border-bottom: 1px dashed var(--line); padding-bottom: 4px; }
+.cx-rooms li strong { font-size: 16px; }
+.cx-rooms li span { color: var(--muted); font-size: 13px; text-align: right; }
+.cx-rooms li.over strong { color: var(--muted); }
+.cx-sub { margin: -4px 0 0; color: var(--muted); font-size: 14px; }

@@ -5,7 +5,9 @@
   const fmt = (n) => (n == null ? "?" : Math.round(n).toLocaleString("uk-UA"));
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
-  let data = { items: [] };
+  let data = { items: [], complexes: [] };
+  let market = "resale";
+  try { market = localStorage.getItem(STORE + "-market") || "resale"; } catch {}
   let cityNames = { lviv: "Львів" };
   const cityName = (k) => cityNames[k || "lviv"];
   let mine = {};
@@ -86,11 +88,15 @@
     if (f.needs_repair) b.push(["🔨 Під ремонт", "good"]);
     if (f.owner) b.push(["👤 Власник", "good"]);
     if (it.verified) b.push(["✅ Перевірено DIM.RIA", "good"]);
+    if (f.new_build && market === "new") {
+      if (f.under_construction) b.push(["🚧 Будується / переуступка", "warn"]);
+      else if (f.ready) b.push(["✅ Здано", "good"]);
+    }
     if (f.spacious) b.push(["📐 Простора", ""]);
     if (f.fresh_renovation) b.push(["✨ Свіжий ремонт", ""]);
     if (f.over_budget) b.push(["💸 Вище бюджету", "warn"]);
     if (f.apartments) b.push(["⚠ Апартаменти", "bad"]);
-    if (f.under_construction) b.push(["⚠ Будується / переуступка", "bad"]);
+    if (f.under_construction && market !== "new") b.push(["⚠ Будується / переуступка", "bad"]);
     if (it.active === false) b.push(["Зникло з сайту", "bad"]);
     return b;
   };
@@ -117,10 +123,11 @@
     const t = $("toast"); t.textContent = msg; t.hidden = false;
     clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 1800);
   };
-  function share(it) {
+  function share(it, override) {
     shareItem = it;
-    const text = shareText(it);
-    $("sh-sub").textContent = `${it.title || "Квартира"} · $${fmt(it.price_usd)} · код #${it.id}`;
+    shareItem._text = override || null;
+    const text = override || shareText(it);
+    $("sh-sub").textContent = `${it.title || it.name || "Квартира"}${it.price_usd ? " · $" + fmt(it.price_usd) : ""} · код #${it.id}`;
     $("sh-wa").href = "https://wa.me/?text=" + encodeURIComponent(text);
     $("sh-tg").href = "https://t.me/share/url?url=" + encodeURIComponent(cardLink(it)) + "&text=" + encodeURIComponent(text);
     $("sh-vb").href = "viber://forward?text=" + encodeURIComponent(text);
@@ -130,12 +137,12 @@
   $("sh-native").onclick = async () => {
     if (!shareItem) return;
     $("share-sheet").hidden = true;
-    try { await navigator.share({ title: shareItem.title, text: shareText(shareItem) }); } catch {}
+    try { await navigator.share({ title: shareItem.title || shareItem.name, text: shareItem._text || shareText(shareItem) }); } catch {}
   };
   $("sh-copy-card").onclick = () => { if (shareItem) copy(cardLink(shareItem), "Посилання на картку скопійовано"); $("share-sheet").hidden = true; };
   $("sh-close").onclick = () => { $("share-sheet").hidden = true; };
   $("share-sheet").onclick = (e) => { if (e.target.id === "share-sheet") $("share-sheet").hidden = true; };
-  $("sh-copy").onclick = () => { if (shareItem) copy(shareText(shareItem), "Скопійовано"); $("share-sheet").hidden = true; };
+  $("sh-copy").onclick = () => { if (shareItem) copy(shareItem._text || shareText(shareItem), "Скопійовано"); $("share-sheet").hidden = true; };
 
   // ---------- card
   function buildCard(it) {
@@ -313,6 +320,117 @@
     return node;
   }
 
+  // ---------- новобудови від забудовників
+  const STATUS = { ready: ["✅ Здано", "good"], partly: ["🟡 Частково здано", "warn"], building: ["🚧 Будується", "warn"] };
+  const cxFrom = (cx) => {
+    const v = Object.entries(cx.rooms || {}).filter(([r]) => Number(r) >= (data.criteria?.rooms_min || 2)).map(([, x]) => x.from_usd);
+    return v.length ? Math.min(...v) : null;
+  };
+  const cxShareText = (cx) => {
+    const lines = [`🏗 ${cx.name}${cx.developer ? " (" + cx.developer + ")" : ""}`, cx.street ? `📍 ${cx.street}` : ""];
+    for (const [r, x] of Object.entries(cx.rooms || {})) lines.push(`🛏 ${r}${r === "4" ? "+" : ""} кімн.: від $${fmt(x.from_usd)} · ${x.area_min}–${x.area_max} м²`);
+    if (!cx.rooms || !Object.keys(cx.rooms).length) lines.push(`💵 від $${fmt(cx.price_m2_usd)}/м²`);
+    lines.push((STATUS[cx.status] || [""])[0] + (cx.release ? ` · здача ${cx.release}` : ""));
+    if (cx.installment) lines.push(`📆 Розтермінування${cx.installment.months ? " до " + cx.installment.months + " міс." : ""}${cx.installment.first_pct ? ", перший внесок від " + cx.installment.first_pct + "%" : ""}`);
+    lines.push(`🔗 На нашому сайті: ${cardLink(cx)}`, `📎 ЖК: ${cx.url}`);
+    return lines.filter(Boolean).join("\n");
+  };
+  function buildComplex(cx) {
+    const node = $("card-tpl").content.firstElementChild.cloneNode(true);
+    if (cx.id === focusId) node.classList.add("focus");
+    const strip = node.querySelector(".strip");
+    if (cx.photo) {
+      const img = el("img"); img.src = cx.photo; img.alt = cx.name; img.loading = "lazy";
+      img.onerror = () => img.remove();
+      strip.append(img);
+    }
+    if (cx.lat != null) strip.append(mapSlide({ ...cx, geo_approx: false }));
+    if (!strip.children.length) strip.append(el("span", "noimg", "🏗"));
+    const pc = node.querySelector(".pcount");
+    if (strip.children.length > 1) {
+      pc.textContent = `1 / ${strip.children.length}`;
+      strip.addEventListener("scroll", () => { pc.textContent = `${Math.round(strip.scrollLeft / strip.clientWidth) + 1} / ${strip.children.length}`; }, { passive: true });
+    } else pc.remove();
+    node.querySelector(".src").textContent = cx.source;
+    const fav = node.querySelector(".fav");
+    const paint = () => { const on = !!mine[cx.id]?.fav; fav.classList.toggle("on", on); fav.textContent = on ? "★" : "☆"; };
+    paint();
+    fav.onclick = () => { setMine(cx.id, { fav: !mine[cx.id]?.fav }); paint(); toast(mine[cx.id].fav ? "⭐ Додано в обрані" : "Прибрано з обраних"); };
+
+    const from = cxFrom(cx);
+    node.querySelector(".price strong").textContent = from ? `від $${fmt(from)}` : `від $${fmt(cx.price_m2_usd)}/м²`;
+    node.querySelector(".ppm").textContent = from ? `від $${fmt(cx.price_m2_usd)}/м²` : "";
+    const u = uah(from);
+    if (u) node.querySelector(".uah").textContent = `≈ від ${fmt(u)} грн`;
+    node.querySelector(".title").textContent = cx.name;
+    const code = node.querySelector(".code");
+    code.textContent = `#${cx.id} · скопіювати посилання`;
+    code.onclick = () => copy(cardLink(cx), "Посилання скопійовано");
+    const sub = el("p", "cx-sub", [cx.developer, cx.street].filter(Boolean).join(" · "));
+    node.querySelector(".title").after(sub);
+
+    const dl = node.querySelector(".details");
+    const rooms = Object.entries(cx.rooms || {});
+    if (rooms.length) {
+      const ul = el("ul", "cx-rooms");
+      for (const [r, x] of rooms) {
+        const li = el("li", x.from_usd > (data.criteria?.max_price_usd || Infinity) ? "over" : "");
+        li.append(el("strong", null, `${r}${r === "4" ? "+" : ""} кімн. — від $${fmt(x.from_usd)}`),
+          el("span", null, `${x.area_min === x.area_max ? x.area_min : x.area_min + "–" + x.area_max} м² · ${x.plans} план.`));
+        ul.append(li);
+      }
+      dl.replaceWith(ul);
+    } else {
+      const d = el("div"); d.append(el("dt", null, "Ціни за кімнатністю"), el("dd", null, "на сторінці ЖК")); dl.append(d);
+    }
+    const badges = node.querySelector(".badges");
+    const [st, cls] = STATUS[cx.status] || ["", ""];
+    if (st) badges.append(el("span", "badge " + cls, st + (cx.status !== "ready" && cx.release ? ` · здача ${cx.release}` : "")));
+    if (cx.status === "partly") badges.append(el("span", "badge", `${cx.ready_sections} з ${cx.ready_sections + cx.building_sections} секцій здано`));
+    if (cx.installment) badges.append(el("span", "badge good", `📆 Розтермінування${cx.installment.months ? " до " + cx.installment.months + " міс." : ""}${cx.installment.first_pct ? ", від " + cx.installment.first_pct + "%" : ""}`));
+    if (cx.credit) badges.append(el("span", "badge", "🏦 Кредит банку"));
+    if (cx.voucher) badges.append(el("span", "badge", "🎟 Житловий ваучер"));
+    if (cx.verified) badges.append(el("span", "badge good", "✅ Перевірено DIM.RIA"));
+    if (cx.promo) badges.append(el("span", "badge warn", "🎁 " + cx.promo));
+    if (cx.available) badges.append(el("span", "badge", `${cx.available} квартир у продажу`));
+    const desc = node.querySelector(".desc");
+    if (cx.promo_text) desc.textContent = cx.promo_text; else node.querySelector(".descwrap").remove();
+    node.querySelector(".contact").remove();
+    node.querySelector(".mine").remove();
+    node.querySelector(".seen").remove();
+    const open = node.querySelector(".open");
+    open.href = cx.url; open.textContent = "Відкрити ЖК";
+    node.querySelector(".share").onclick = () => share(cx, cxShareText(cx));
+    return node;
+  }
+  function renderComplexes() {
+    const box = $("complexes");
+    box.hidden = market !== "new";
+    if (box.hidden) return;
+    const city = $("f-city").value;
+    const maxP = data.criteria?.max_price_usd || Infinity;
+    let list = (data.complexes || []).filter((cx) => {
+      if (city && (cx.city || "lviv") !== city) return false;
+      if ($("cx-ready").checked && cx.status === "building") return false;
+      if ($("cx-install").checked && !cx.installment) return false;
+      if ($("cx-budget").checked) { const f = cxFrom(cx); if (f == null || f > maxP) return false; }
+      return true;
+    });
+    if (focusId && focusId.startsWith("zk-")) list = (data.complexes || []).filter((cx) => cx.id === focusId);
+    list.sort((a, b) => (cxFrom(a) ?? 1e9) - (cxFrom(b) ?? 1e9) || (a.price_m2_usd || 0) - (b.price_m2_usd || 0));
+    $("cx-count").textContent = `ЖК: ${list.length} з ${(data.complexes || []).length}`;
+    const g = $("cx-list");
+    g.replaceChildren(...(list.length ? list.map(buildComplex) : [el("p", "empty", "Немає ЖК за цими умовами.")]));
+  }
+  ["cx-budget", "cx-ready", "cx-install"].forEach((id) => $(id).addEventListener("change", () => { try { localStorage.setItem(STORE + "-" + id, $(id).checked ? "1" : "0"); } catch {} renderComplexes(); }));
+  ["cx-budget", "cx-ready", "cx-install"].forEach((id) => { try { const v = localStorage.getItem(STORE + "-" + id); if (v != null) $(id).checked = v === "1"; } catch {} });
+  const setMarket = (m) => {
+    market = m;
+    try { localStorage.setItem(STORE + "-market", m); } catch {}
+    document.querySelectorAll("#market button").forEach((b) => b.classList.toggle("active", b.dataset.market === m));
+  };
+  document.querySelectorAll("#market button").forEach((b) => { b.onclick = () => { clearFocus(); setMarket(b.dataset.market); render(); }; });
+
   // ---------- list
   function filtered() {
     const rooms = $("f-rooms").value;
@@ -333,6 +451,7 @@
       if (!$("f-inactive").checked && it.active === false) return false;
       if (it.dup_of && data.items.some((x) => x.id === it.dup_of)) return false;
       if ($("f-fresh").checked && it.suspicious) return false;
+      if ((market === "new") !== !!f.new_build) return false;
       return true;
     });
   }
@@ -356,8 +475,13 @@
       ppm: (a, b) => ppm(a) - ppm(b),
       area: (a, b) => (b.area || 0) - (a.area || 0),
     };
+    if (focusId && focusId.startsWith("zk-")) setMarket("new");
+    else if (focusId) { const f = data.items.find((it) => it.id === focusId); if (f) setMarket(f.flags?.new_build ? "new" : "resale"); }
+    document.querySelectorAll("#market button").forEach((b) => b.classList.toggle("active", b.dataset.market === market));
+    renderComplexes();
     const focused = focusId ? data.items.filter((it) => it.id === focusId) : [];
-    $("focusbar").hidden = !focused.length;
+    $("focusbar").hidden = !focused.length && !(focusId && focusId.startsWith("zk-"));
+    if (focusId && focusId.startsWith("zk-")) { $("list").replaceChildren(); $("count").textContent = ""; return; }
     const items = focused.length ? focused : filtered().filter((it) => inTab(it, tab)).sort(sorters[$("f-sort").value] || sorters.score);
     $("count").textContent = `Показано ${items.length} з ${data.items.length}`;
     const list = $("list");
@@ -393,6 +517,7 @@
       data = {
         ...parts[0],
         items: [...byId.values()],
+        complexes: parts.flatMap((p) => p.complexes || []),
         cities: [...cities.values()],
         updated: parts.map((p) => p.updated).filter(Boolean).sort().pop(),
         updated_home: parts[1]?.updated,

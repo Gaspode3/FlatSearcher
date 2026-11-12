@@ -184,6 +184,8 @@ OWNER_RE = re.compile(r"від власник|без посередник|без
 AGENCY_RE = re.compile(r"агенц|ріелтор\s+\w+|рієлтор\s+\w+|комісія\s+\d|\bан\s+[«\"']", re.I)
 APART_RE = re.compile(r"апартамент", re.I)
 UNDER_CONSTR_RE = re.compile(r"переуступк|будується|здача (в|у)?\s*(експлуатац|\d)|0 цикл", re.I)
+NEWBUILD_RE = re.compile(r"новобуд|первинн|primary_market|житловий фонд від 20[12]\d|\bЖК\b|переуступк|здача в експлуатац|0 цикл|від забудовника", re.I)
+READY_RE = re.compile(r"здан\w*|введен\w* в експлуатац|право власност|заселен", re.I)
 PHONE_RE = re.compile(r"(?<!\d)(?:\+?3\s?8\s?)?\(?0\s?\d{2}\)?[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}(?!\d)")
 
 
@@ -250,6 +252,8 @@ def make_flags(item: dict, cfg: dict) -> dict:
         "apartments": bool(APART_RE.search(text)),
         "under_construction": bool(UNDER_CONSTR_RE.search(text)),
         "spacious": (item.get("area") or 0) >= cfg["spacious_area_m2"],
+        "new_build": bool(NEWBUILD_RE.search(text)) or (year is not None and year >= 2010),
+        "ready": bool(READY_RE.search(text)) and not bool(UNDER_CONSTR_RE.search(text)),
         "over_budget": (item.get("price_usd") or 0) > cfg["budget_usd"],
     }
     if flags["owner"] and item.get("is_owner") is None and AGENCY_RE.search(text):
@@ -609,6 +613,106 @@ def ria_detail(it: dict, html: str) -> None:
     g = GEO_RE.search(html)
     if g:
         it["lat"], it["lon"] = float(g.group(1)), float(g.group(2))
+
+
+# ================================================================ новобудови від забудовників (каталог DOM.RIA)
+
+def ria_init(html: str) -> dict | None:
+    m = re.search(r"<script>window\.init=(\{.*?\});?</script>", html, re.S)
+    if not m:
+        return None
+    try:
+        return json.loads(re.sub(r'(?<=[:\[,])undefined(?=[,\]}])', "null", m.group(1)))
+    except Exception as e:  # noqa: BLE001
+        log("  ! DOM.RIA: не вдалося розібрати дані сторінки:", e)
+        return None
+
+
+def scrape_complexes(cfg: dict, rate: float, city: dict, known: dict) -> list[dict]:
+    """Житлові комплекси з квартирами в продажу: ціни «від» за кімнатністю, стан будівництва, розтермінування."""
+    rc = city.get("domria") or {}
+    nc = cfg.get("newbuilds", {})
+    if not rc.get("slug"):
+        return []
+    found: dict[int, dict] = {}
+    urls: dict[int, str] = {}
+    developers: dict[int, str] = {}
+    for page in range(1, nc.get("catalog_pages", 30) + 1):
+        html = get(f"https://dom.ria.com/uk/novostroyki/{rc['slug']}/", params={"page": page} if page > 1 else None)
+        d = ria_init(html or "")
+        if not d:
+            break
+        for m in re.finditer(r'href="(?:https://dom\.ria\.com)?(/uk/novostroyka-[\w-]+?-(\d+)/)', html):
+            urls.setdefault(int(m.group(2)), "https://dom.ria.com" + m.group(1))
+        for dev in (d.get("developers") or {}).values():
+            if isinstance(dev, dict) and dev.get("developerId"):
+                developers[dev["developerId"]] = dev.get("name_uk") or dev.get("name")
+        ids = (d.get("catalog") or {}).get("newbuilds") or []
+        if not ids:
+            break
+        for nid in ids:
+            nb = (d.get("newbuilds") or {}).get(str(nid)) or (d.get("newbuilds") or {}).get(nid)
+            if nb and (not rc.get("city_id") or nb.get("cityId") in (None, rc["city_id"])):
+                found[int(nid)] = dict(nb, _nid=int(nid))
+        log(f"  Новобудови {city['name']} стор. {page}: {len(ids)}")
+        time.sleep(1)
+    max_m2 = cfg["max_price_usd"] / nc.get("min_area_for_prefilter", 45)
+    cands = [nb for nb in found.values()
+             if (nb.get("withFlats") or (nb.get("availableFlatsCount") or 0) > 0) and 0 < (nb.get("priceUSD") or 0) <= max_m2]
+    cands.sort(key=lambda nb: nb.get("priceUSD") or 1e9)
+    log(f"  Новобудови: у каталозі {len(found)}, з квартирами в продажу й ціною до ${max_m2:.0f}/м² — {len(cands)}")
+    out, opened = [], 0
+    for nb in cands:
+        nid = nb["_nid"]
+        cid = f"zk-{nid}"
+        old = known.get(cid)
+        rooms, checked = None, None
+        if old and old.get("rooms_checked") and (dt.date.today() - dt.date.fromisoformat(old["rooms_checked"])).days < nc.get("recheck_days", 3):
+            rooms, checked = old.get("rooms"), old["rooms_checked"]
+        elif opened < nc.get("pages_per_run", 60) and urls.get(nid):
+            html = get(urls[nid])
+            opened += 1
+            d = ria_init(html or "") or {}
+            by: dict[int, dict] = {}
+            for p in (d.get("plans") or {}).values():
+                if p.get("newbuildId") != nid or p.get("sold") or not p.get("fullAreaPriceUsd"):
+                    continue
+                r = min(int(p.get("roomCount") or 0), 4)
+                if r < cfg["rooms_min"]:
+                    continue
+                b = by.setdefault(r, {"from_usd": 1e12, "area_min": 1e9, "area_max": 0, "plans": 0})
+                b["from_usd"] = min(b["from_usd"], round(p["fullAreaPriceUsd"]))
+                b["area_min"] = min(b["area_min"], p.get("areaMin") or 1e9)
+                b["area_max"] = max(b["area_max"], p.get("areaMin") or 0)
+                b["plans"] += 1
+            rooms, checked = {str(k): v for k, v in sorted(by.items())}, TODAY
+            time.sleep(1)
+        rel = nb.get("release") or {}
+        ready, notready = nb.get("readySectionsCount") or 0, nb.get("notReadySectionsCount") or 0
+        status = "ready" if ready and not notready else "partly" if ready else "building"
+        promo = clean(nb.get("promoText") or "", 600)
+        out.append({
+            "id": cid, "kind": "complex", "source": "DOM.RIA", "city": city["key"],
+            "name": nb.get("name") or nb.get("name2"), "developer": developers.get(nb.get("developerId")),
+            "street": nb.get("streetName") or nb.get("street"),
+            "url": urls.get(nid) or f"https://dom.ria.com/uk/novostroyki/{rc['slug']}/",
+            "photo": (nb.get("img_620x460") or nb.get("img") or "").replace("-276x183", "-620x460"),
+            "lat": nb.get("latitude"), "lon": nb.get("longitude"),
+            "price_m2_usd": nb.get("priceUSD"), "area_min": nb.get("areaMin"), "area_max": nb.get("areaMax"),
+            "available": nb.get("availableFlatsCount"),
+            "status": status, "ready_sections": ready, "building_sections": notready,
+            "release": f"{rel.get('quarter')} кв. {rel.get('year')}" if rel.get("year") else None,
+            "installment": {"months": nb.get("installmentPeriodMax"), "first_pct": nb.get("installmentFirstPaymentMin")}
+                           if nb.get("paymentByInstallments") else None,
+            "credit": bool(nb.get("hasCredit") or nb.get("banksWithCredit")),
+            "voucher": bool(nb.get("housingVoucher")),
+            "verified": bool(nb.get("inspected")),
+            "promo": nb.get("promoShort"), "promo_text": promo,
+            "rooms": rooms, "rooms_checked": checked,
+            "first_seen": (old or {}).get("first_seen", TODAY), "last_seen": TODAY,
+        })
+    log(f"  Новобудови: відкрито сторінок ЖК {opened}")
+    return out
 
 
 # ================================================================ rieltor.ua
@@ -1055,7 +1159,8 @@ def main() -> int:
     for city in cities:
         for key in wanted:
             if key not in SOURCES:
-                log(f"  ! невідоме джерело {key}")
+                if key != "newbuilds":
+                    log(f"  ! невідоме джерело {key}")
                 continue
             name, fn = SOURCES[key]
             log(f"→ {name} · {city['name']}")
@@ -1069,6 +1174,19 @@ def main() -> int:
                 errors.append(f"{name} ({city['name']}): {e}")
                 log(f"  ! {name} впав: {e}")
 
+    complexes = [c for c in existing.get("complexes", [])]
+    if "newbuilds" in wanted:
+        known_c = {c["id"]: c for c in complexes}
+        fresh_c = []
+        for city in cities:
+            log(f"→ Новобудови (DOM.RIA) · {city['name']}")
+            try:
+                fresh_c += scrape_complexes(CFG, rate, city, known_c)
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"Новобудови ({city['name']}): {e}")
+                log(f"  ! Новобудови впали: {e}")
+        if fresh_c:
+            complexes = fresh_c
     try:
         geocode(scraped, CFG)
     except Exception as e:  # noqa: BLE001
@@ -1133,6 +1251,7 @@ def main() -> int:
         "usd_rate": round(rate, 2),
         "criteria": {k: CFG[k] for k in ("rooms_min", "rooms_max", "budget_usd", "max_price_usd", "default_rooms")},
         "cities": [{"key": c["key"], "name": c["name"]} for c in cities],
+        "complexes": complexes,
         "errors": errors,
         "items": items,
     }, ensure_ascii=False, indent=1), encoding="utf-8")

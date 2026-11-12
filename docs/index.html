@@ -15,6 +15,11 @@
     <p class="meta" id="meta">Завантаження…</p>
   </header>
 
+  <nav class="market" id="market" aria-label="Ринок">
+    <button data-market="resale" class="active">🏚 Вторинка</button>
+    <button data-market="new">🏗 Новобудови</button>
+  </nav>
+
   <nav class="tabs" id="tabs" aria-label="Розділи">
     <button data-tab="unseen" class="active">Не переглянуті <span></span></button>
     <button data-tab="all">Усі <span></span></button>
@@ -68,6 +73,19 @@
     <span>Показано одне оголошення</span>
     <button id="focus-clear">← До всіх</button>
   </div>
+  <section class="complexes" id="complexes" hidden>
+    <div class="cx-head">
+      <h2>Пропозиції забудовників</h2>
+      <div class="row chips">
+        <label class="chip"><input type="checkbox" id="cx-budget" checked> 💵 Є 2+ кімн. у бюджеті</label>
+        <label class="chip"><input type="checkbox" id="cx-ready"> ✅ Є здані будинки</label>
+        <label class="chip"><input type="checkbox" id="cx-install"> 📆 Розтермінування</label>
+      </div>
+      <p class="count" id="cx-count"></p>
+    </div>
+    <div class="grid" id="cx-list"></div>
+    <h2 class="resale-h">Квартири в новобудовах від власників і рієлторів</h2>
+  </section>
   <p class="count" id="count"></p>
   <main id="list" class="grid"></main>
 
