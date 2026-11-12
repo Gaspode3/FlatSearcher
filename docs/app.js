@@ -30,9 +30,9 @@
   const saveFilters = () => {
     const f = {};
     filterIds.forEach((id) => { const e = $(id); f[id] = e.type === "checkbox" ? e.checked : e.value; });
-    try { localStorage.setItem(STORE + "-filters2", JSON.stringify(f)); } catch {}
+    try { localStorage.setItem(STORE + "-filters3", JSON.stringify(f)); } catch {}
   };
-  const readFilters = () => { try { return JSON.parse(localStorage.getItem(STORE + "-filters2") || "{}"); } catch { return {}; } };
+  const readFilters = () => { try { return JSON.parse(localStorage.getItem(STORE + "-filters3") || "{}"); } catch { return {}; } };
 
   const cardLink = (it) => location.origin + location.pathname + "#id=" + encodeURIComponent(it.id);
   const focusFromHash = () => { const m = location.hash.match(/^#id=(.+)$/); return m ? decodeURIComponent(m[1]) : null; };
