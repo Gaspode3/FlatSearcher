@@ -1,0 +1,20 @@
+name: Перевірка джерел (без збереження)
+
+on:
+  workflow_dispatch:
+    inputs:
+      sources:
+        description: "Джерела через кому"
+        default: "olx,rieltor"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Пробний збір
+        run: python scraper/scrape.py --sources "${{ inputs.sources }}" --out /tmp/check.json --new /tmp/check.md --geocache /tmp/geo.json

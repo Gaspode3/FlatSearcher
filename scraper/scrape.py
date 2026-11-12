@@ -50,7 +50,44 @@ def log(*args: Any) -> None:
     print(*args, file=sys.stderr, flush=True)
 
 
+CURL_HOSTS = ("olx.ua", "rieltor.ua")  # ці сайти відкидають запити бібліотеки requests, але пускають curl
+
+
+def get_curl(url: str, params: dict | None, as_json: bool, tries: int):
+    import subprocess
+    import urllib.parse
+    full = url + (("&" if "?" in url else "?") + urllib.parse.urlencode(params) if params else "")
+    exe = "curl.exe" if os.name == "nt" else "curl"
+    for attempt in range(1, tries + 1):
+        try:
+            p = subprocess.run(
+                [exe, "-sL", "--compressed", "--max-time", "40", "-A", HEADERS["User-Agent"],
+                 "-H", "Accept-Language: " + HEADERS["Accept-Language"],
+                 "-H", "Accept: " + ("application/json" if as_json else "text/html,application/xhtml+xml"),
+                 "-w", "\n%{http_code}", full],
+                capture_output=True, timeout=60)
+            body, _, code = p.stdout.decode("utf-8", "replace").rpartition("\n")
+            code = int(code.strip() or 0)
+            if code in (403, 404, 410):
+                log(f"  ! {full}: HTTP {code} (curl) — пропускаю")
+                return None
+            if code == 429 or code >= 500 or code == 0:
+                log(f"  ! {full}: HTTP {code} (curl, спроба {attempt})")
+                time.sleep(5 * attempt)
+                continue
+            if DEBUG:
+                DEBUG_DIR.mkdir(exist_ok=True)
+                (DEBUG_DIR / (hashlib.md5(full.encode()).hexdigest()[:10] + ".html")).write_text(body, encoding="utf-8")
+            return json.loads(body) if as_json else body
+        except Exception as e:  # noqa: BLE001
+            log(f"  ! {full} (curl, спроба {attempt}): {e}")
+            time.sleep(3 * attempt)
+    return None
+
+
 def get(url: str, *, params: dict | None = None, as_json: bool = False, tries: int = 3, headers: dict | None = None):
+    if headers is None and any(h in url for h in CURL_HOSTS):
+        return get_curl(url, params, as_json, tries)
     for attempt in range(1, tries + 1):
         try:
             r = requests.get(url, params=params, headers=headers or HEADERS, timeout=30)
