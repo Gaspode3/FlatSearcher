@@ -1,6 +1,6 @@
 {
- "updated": "2026-11-12T12:00+00:00",
- "usd_rate": 46.0,
+ "updated": "2026-11-12T12:25+00:00",
+ "usd_rate": 45.32,
  "criteria": {
   "rooms_min": 3,
   "rooms_max": 4,
@@ -9,6 +9,43 @@
  },
  "errors": [],
  "items": [
+  {
+   "id": "ria-34135558",
+   "source": "DOM.RIA",
+   "url": "https://dom.ria.com/uk/realty-prodaja-kvartira-lvov-levandovka-roksolyany-ulitsa-34135558.html",
+   "title": "вул. Роксоляни Левандівка Львів ЖК Auroom District",
+   "price_usd": 81900,
+   "rooms": 3,
+   "area": 78.0,
+   "floor": 1,
+   "floors": 8,
+   "photos": [],
+   "description": "81 900 $ 1 050 $ за м² Додати в обране вул. Роксоляни Левандівка · Залізничний · Львів · ЖК Auroom District 3 кімнати 78 м² 1 поверх з 8 Дитячий садок Власний ТРЦ Free Wi-Fi на території Продаж 3-кімнатної квартири від забудовника без посередників - 3-кімнатна квартира в ЖК Auroom District.\n        Сучасне планування площею  -  78 м² створене саме для комфорту і затишку.\n        Квартира розташована на 1 поверсі 8-и поверхового будинку. Адреса новобудови  - Львів, рн Залізничний, Роксоляни.\n        ЖК Auroom District відрізняється зручним розташуванням, оскільки в безпосередній близькості від нього є: навчальні заклади, школа, дитячий садок, лікарня, тц, ринок, магазини, паркові зони, транспортна розв'язка, спорт, кафе, кав'ярня, ресторан, наземний паркінг.\n        Заселитися в нове житло можна після заявленої дати здачі - 4 квартал 2028 року.\n        Забудовник - Auroom. Продаж квартири · Опубліковано 7 лис. · Перевірено\n          \n            30 жов.",
+   "district": null,
+   "address": "вул. Роксоляни Левандівка Львів ЖК Auroom District",
+   "is_owner": null,
+   "flags": {
+    "old_fund": false,
+    "needs_repair": false,
+    "fresh_renovation": false,
+    "owner": true,
+    "apartments": false,
+    "under_construction": false,
+    "spacious": true,
+    "over_budget": false
+   },
+   "score": 7.95,
+   "phones": [],
+   "first_seen": "2026-11-12",
+   "price_history": [
+    {
+     "date": "2026-11-12",
+     "usd": 81900
+    }
+   ],
+   "last_seen": "2026-11-12",
+   "active": true
+  },
   {
    "id": "manual-2",
    "source": "Вручну",
