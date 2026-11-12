@@ -1,33 +1,104 @@
 {
-  "_comment": "Критерії пошуку. Після зміни просто закомітьте файл — наступний запуск використає нові значення.",
-  "rooms_min": 3,
-  "rooms_max": 4,
+  "_comment": "Критерії пошуку. Після зміни закомітьте файл — наступний запуск використає нові значення.",
+  "site_url": "https://gaspode3.github.io/FlatSearcher",
+  "rooms_min": 1,
+  "rooms_max": 10,
+  "default_rooms": "3+",
+  "notify_rooms_min": 3,
   "budget_usd": 85000,
   "max_price_usd": 90000,
   "min_area_m2": 0,
   "spacious_area_m2": 60,
   "keep_inactive_days": 14,
+  "geocode_per_run": 60,
+  "default_sources": [
+    "olx",
+    "domria",
+    "rieltor",
+    "mistechko",
+    "svitkvartyr"
+  ],
+  "cities": [
+    {
+      "key": "lviv",
+      "name": "Львів",
+      "enabled": true,
+      "olx": {
+        "region_id": 5,
+        "city_id": 176
+      },
+      "domria": {
+        "slug": "lvov",
+        "state_id": 5,
+        "city_id": 5
+      },
+      "rieltor": "lvov",
+      "mistechko": "lvov",
+      "svitkvartyr": "lviv"
+    },
+    {
+      "key": "odesa",
+      "name": "Одеса",
+      "enabled": false,
+      "_comment": "Щоб увімкнути — enabled: true. Ідентифікатори OLX визначаться автоматично.",
+      "olx": {},
+      "domria": {
+        "slug": "odessa"
+      },
+      "rieltor": "odessa",
+      "mistechko": null,
+      "svitkvartyr": "odesa"
+    },
+    {
+      "key": "khmelnytskyi",
+      "name": "Хмельницький",
+      "enabled": false,
+      "olx": {},
+      "domria": {
+        "slug": "hmelnitskiy"
+      },
+      "rieltor": "khmelnitskiy",
+      "mistechko": null,
+      "svitkvartyr": "khmelnytskyi"
+    }
+  ],
   "olx": {
-    "enabled": true,
-    "pages": 5,
-    "search_urls": [
-      "https://www.olx.ua/uk/nedvizhimost/kvartiry/prodazha-kvartir/lvov/?search%5Bfilter_enum_number_of_rooms_string%5D%5B0%5D=trehkomnatnye&search%5Bfilter_enum_number_of_rooms_string%5D%5B1%5D=chetyrehkomnatnye&search%5Border%5D=created_at%3Adesc"
-    ]
+    "pages": 10
   },
   "domria": {
-    "enabled": true,
-    "_comment": "Офіційне API: ключ на https://developers.ria.com (оберіть варіант з додатковими питаннями — 1000 запитів/міс.), додайте в GitHub Secrets як DOMRIA_API_KEY. Збирач робить 1 пошуковий запит на день і запитує деталі лише нових оголошень (не більше api_info_per_run за запуск) — це ≈ 300–800 запитів на місяць. Без ключа розбирає HTML-сторінки.",
-    "state_id": 5,
-    "city_id": 5,
-    "api_pages": 1,
-    "api_info_per_run": 25,
-    "html_pages": 5,
-    "html_urls": [
-      "https://dom.ria.com/uk/prodazha-kvartir/lvov-bez-rieltora-3k/",
-      "https://dom.ria.com/uk/prodazha-kvartir/lvov-bez-rieltora-4k/",
-      "https://dom.ria.com/uk/prodazha-kvartir/lvov-3k/",
-      "https://dom.ria.com/uk/prodazha-kvartir/lvov-4k/",
-      "https://dom.ria.com/uk/prodazha-kvartir/lvov-bez-rieltora/"
+    "html_pages": 3,
+    "enrich_per_run": 50,
+    "url_templates": [
+      "https://dom.ria.com/uk/prodazha-kvartir/{slug}-bez-rieltora/",
+      "https://dom.ria.com/uk/prodazha-kvartir/{slug}-3k/",
+      "https://dom.ria.com/uk/prodazha-kvartir/{slug}-4k/",
+      "https://dom.ria.com/uk/prodazha-kvartir/{slug}-2k/",
+      "https://dom.ria.com/uk/prodazha-kvartir/{slug}-1k/"
+    ]
+  },
+  "rieltor": {
+    "rooms": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "pages": 3,
+    "enrich_per_run": 40
+  },
+  "mistechko": {
+    "pages": 3,
+    "enrich_per_run": 40,
+    "url_templates": [
+      "https://mistechko.com/{slug}/prodazh-kvartir/?lt=1&page={page}",
+      "https://mistechko.com/{slug}/prodazh-trikimnatnih-kvartir/"
+    ]
+  },
+  "svitkvartyr": {
+    "pages": 3,
+    "url_templates": [
+      "https://svitkvartyr.com/prodazh-kvartyr/{slug}/avstrijskyj-budynok",
+      "https://svitkvartyr.com/prodazh-kvartyr/{slug}/vtorynnyj-rynok"
     ]
   }
 }

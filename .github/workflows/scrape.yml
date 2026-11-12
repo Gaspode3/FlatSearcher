@@ -36,7 +36,7 @@ jobs:
         run: |
           git config user.name "kvartyra-bot"
           git config user.email "kvartyra-bot@users.noreply.github.com"
-          git add docs/data/listings.json
+          git add docs/data/listings.json docs/data/geocache.json 2>/dev/null || git add docs/data/listings.json
           git diff --cached --quiet || git commit -m "Оновлення оголошень $(date -u +%F)"
           git push
 

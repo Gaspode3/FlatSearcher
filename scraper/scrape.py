@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Збирач оголошень про продаж квартир у Львові (OLX + DOM.RIA).
+"""Збирач оголошень про продаж квартир (OLX, DOM.RIA, rieltor.ua, mistechko.com, svitkvartyr.com).
 
-Запуск:  python scraper/scrape.py            # звичайний запуск
-         python scraper/scrape.py --debug    # зберігає сирі сторінки в debug/ для налагодження
+Запуск:  python scraper/scrape.py                      # усі джерела з config.json
+         python scraper/scrape.py --sources olx,rieltor  # лише вибрані
+         python scraper/scrape.py --debug               # зберігає сирі сторінки в debug/
 
 Результат: docs/data/listings.json (дані для сайту) і new_listings.md (нові варіанти
 для сповіщення; файл порожній, якщо нічого нового).
@@ -12,13 +13,14 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import html as htmllib
 import json
 import os
 import re
 import sys
 import time
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable
 
 import requests
 from bs4 import BeautifulSoup
@@ -26,6 +28,7 @@ from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.json"
 DATA_PATH = ROOT / "docs" / "data" / "listings.json"
+GEOCACHE_PATH = ROOT / "docs" / "data" / "geocache.json"
 NEW_PATH = ROOT / "new_listings.md"
 DEBUG_DIR = ROOT / "debug"
 
@@ -39,18 +42,20 @@ HEADERS = {
 
 DEBUG = False
 TODAY = dt.date.today().isoformat()
+CFG: dict = {}
+KNOWN: dict = {}
 
 
 def log(*args: Any) -> None:
     print(*args, file=sys.stderr, flush=True)
 
 
-def get(url: str, *, params: dict | None = None, as_json: bool = False, tries: int = 3):
+def get(url: str, *, params: dict | None = None, as_json: bool = False, tries: int = 3, headers: dict | None = None):
     for attempt in range(1, tries + 1):
         try:
-            r = requests.get(url, params=params, headers=HEADERS, timeout=30)
+            r = requests.get(url, params=params, headers=headers or HEADERS, timeout=30)
             if r.status_code in (403, 404, 410):
-                log(f"  ! {url}: HTTP {r.status_code} — пропускаю")
+                log(f"  ! {r.url}: HTTP {r.status_code} — пропускаю")
                 return None
             if r.status_code == 429:
                 time.sleep(10 * attempt)
@@ -67,25 +72,46 @@ def get(url: str, *, params: dict | None = None, as_json: bool = False, tries: i
     return None
 
 
-# ---------------------------------------------------------------- helpers
+# ================================================================ helpers
 
 def num(value: Any) -> float | None:
     if value is None:
         return None
     if isinstance(value, (int, float)):
         return float(value)
-    s = str(value).replace(" ", " ").replace(" ", "").replace(",", ".")
+    s = str(value).replace(" ", " ").replace(" ", " ")
+    s = re.sub(r"(?<=\d)\s+(?=\d)", "", s).replace(",", ".")
     m = re.search(r"\d+(?:\.\d+)?", s)
     return float(m.group()) if m else None
 
 
+def to_usd(value: float | None, currency: str, rate: float) -> int | None:
+    if not value:
+        return None
+    c = (currency or "").upper()
+    if c in ("USD", "$"):
+        return round(value)
+    if c in ("EUR", "€"):
+        return round(value * 1.08)
+    return round(value / rate)
+
+
+def money(text: str, rate: float) -> int | None:
+    """'139 000 $' / '6 727 500 грн.' / '150 тис євро' → долари."""
+    if not text:
+        return None
+    v = num(text)
+    if not v:
+        return None
+    t = text.lower()
+    cur = "USD" if "$" in t or "usd" in t or "дол" in t else "EUR" if "€" in t or "євро" in t or "eur" in t else "UAH"
+    return to_usd(v, cur, rate)
+
+
 def usd_rate() -> float:
     """Курс НБУ гривні до долара; запасне значення — 46."""
-    data = get(
-        "https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange",
-        params={"valcode": "USD", "json": ""},
-        as_json=True,
-    )
+    data = get("https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange",
+               params={"valcode": "USD", "json": ""}, as_json=True)
     try:
         return float(data[0]["rate"])
     except Exception:  # noqa: BLE001
@@ -93,30 +119,34 @@ def usd_rate() -> float:
         return 46.0
 
 
+def clean(text: str | None, limit: int = 2000) -> str:
+    text = re.sub(r"<br\s*/?>", "\n", text or "", flags=re.I)
+    text = htmllib.unescape(re.sub(r"<[^>]+>", " ", text))
+    text = re.sub(r"[ \t]+", " ", text)
+    return re.sub(r"\n\s*\n+", "\n", text).strip()[:limit]
+
+
 OLD_FUND_RE = re.compile(
-    r"австр|польськ|польська будова|довоєн|старий фонд|стар(ий|а|ому) цегл|"
-    r"кам['’]?яниц|сталінк|висок\w* стел|стел\w*\s*(3[.,]\d|3\.?\d?\s*м|[34][.,]\d)|"
-    r"\b(18[5-9]\d|19[0-3]\d)\s*(р|рік|року)",
+    r"австр|польськ|довоєн|старий фонд|стар(ий|а|ому) цегл|кам['’]?яниц|сталінк|"
+    r"висок\w* стел|стел\w*\s*(3[.,]\d|3\.?\d?\s*м|[34][.,]\d)|"
+    r"\b(18[5-9]\d|19[0-3]\d)\s*(р|рік|року)|до\s*19[0-4]\d\s*р|царськ",
     re.I,
 )
 REPAIR_RE = re.compile(
     r"під ремонт|без ремонту|потребує ремонту|старий ремонт|житловий стан|"
     r"косметичн\w* ремонт|радянськ\w* ремонт|під чистов|після будівельн|під оздоблення|"
-    r"ремонт на свій смак",
+    r"ремонт на свій смак|бабусин",
     re.I,
 )
 FRESH_RE = re.compile(r"євроремонт|дизайнерськ\w* ремонт|авторськ\w* (ремонт|проєкт|проект)|новий ремонт|свіжий ремонт", re.I)
 OWNER_RE = re.compile(r"від власник|без посередник|без комісі|без ріелтор|без рієлтор|без ан\b|власник", re.I)
-AGENCY_RE = re.compile(r"агенц|ріелтор\s+\w+|рієлтор\s+\w+|комісія\s+\d|ан\s+[«\"]", re.I)
+AGENCY_RE = re.compile(r"агенц|ріелтор\s+\w+|рієлтор\s+\w+|комісія\s+\d|\bан\s+[«\"']", re.I)
 APART_RE = re.compile(r"апартамент", re.I)
 UNDER_CONSTR_RE = re.compile(r"переуступк|будується|здача (в|у)?\s*(експлуатац|\d)|0 цикл", re.I)
-
-
 PHONE_RE = re.compile(r"(?<!\d)(?:\+?3\s?8\s?)?\(?0\s?\d{2}\)?[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}(?!\d)")
 
 
 def phones_from_text(text: str) -> list[str]:
-    """Телефони, які продавець написав прямо в описі."""
     out = []
     for m in PHONE_RE.finditer(text or ""):
         digits = re.sub(r"\D", "", m.group())[-10:]
@@ -129,7 +159,7 @@ def make_flags(item: dict, cfg: dict) -> dict:
     text = " ".join(str(item.get(k) or "") for k in ("title", "description", "building", "condition"))
     year = item.get("year_built")
     flags = {
-        "old_fund": bool(OLD_FUND_RE.search(text)) or (year is not None and year < 1945),
+        "old_fund": bool(OLD_FUND_RE.search(text)) or (year is not None and 1700 < year < 1945),
         "needs_repair": bool(REPAIR_RE.search(text)),
         "fresh_renovation": bool(FRESH_RE.search(text)),
         "owner": item.get("is_owner") if item.get("is_owner") is not None else bool(OWNER_RE.search(text)),
@@ -138,7 +168,7 @@ def make_flags(item: dict, cfg: dict) -> dict:
         "spacious": (item.get("area") or 0) >= cfg["spacious_area_m2"],
         "over_budget": (item.get("price_usd") or 0) > cfg["budget_usd"],
     }
-    if flags["owner"] and AGENCY_RE.search(text) and item.get("is_owner") is None:
+    if flags["owner"] and item.get("is_owner") is None and AGENCY_RE.search(text):
         flags["owner"] = False
     return flags
 
@@ -154,6 +184,7 @@ def score(item: dict) -> float:
     s -= 3 if f["apartments"] else 0
     s -= 2 if f["under_construction"] else 0
     s += min((item.get("area") or 0) / 40, 3)
+    s += 0.5 if len(item.get("photos") or []) >= 3 else 0
     return round(s, 2)
 
 
@@ -168,291 +199,146 @@ def passes(item: dict, cfg: dict) -> bool:
     return True
 
 
-# ---------------------------------------------------------------- OLX
-
-def _find_ads(obj: Any) -> list[dict]:
-    """Рекурсивно шукає список оголошень у JSON-стані сторінки OLX."""
-    if isinstance(obj, list):
-        if obj and all(isinstance(x, dict) for x in obj) and all("url" in x and "title" in x for x in obj[:3]):
-            return obj
-        for x in obj:
-            found = _find_ads(x)
-            if found:
-                return found
-    elif isinstance(obj, dict):
-        for key in ("ads", "data"):
-            if key in obj:
-                found = _find_ads(obj[key])
-                if found:
-                    return found
-        for v in obj.values():
-            found = _find_ads(v)
-            if found:
-                return found
-    return []
+def base_item(source: str, rid: str, city: dict, **kw) -> dict:
+    item = {"id": rid, "source": source, "city": city["key"], "photos": [], "description": "", "phones": []}
+    item.update({k: v for k, v in kw.items() if v not in (None, "")})
+    return item
 
 
-def _olx_param(params: list[dict], *patterns: str) -> Any:
-    for p in params or []:
-        hay = f"{p.get('key', '')} {p.get('name', '')}".lower()
-        if any(re.search(pt, hay) for pt in patterns):
-            nv = p.get("normalizedValue")
-            v = p.get("value")
-            if isinstance(v, dict):
-                v = v.get("label") or v.get("key") or v.get("value")
-            return nv if nv not in (None, "") else v
+# ================================================================ OLX (через API)
+
+OLX_ROOMS = {"odnokomnatnye": 1, "dvuhkomnatnye": 2, "trehkomnatnye": 3, "chetyrehkomnatnye": 4}
+
+
+def olx_resolve_city(city: dict) -> dict | None:
+    oc = city.get("olx") or {}
+    if oc.get("city_id"):
+        return oc
+    data = get("https://www.olx.ua/api/v1/offers/", params={"category_id": 1758, "query": city["name"], "limit": 50}, as_json=True)
+    for ad in (data or {}).get("data", []):
+        loc = ad.get("location") or {}
+        if (loc.get("city") or {}).get("name", "").lower() == city["name"].lower():
+            oc = {"city_id": loc["city"]["id"], "region_id": (loc.get("region") or {}).get("id")}
+            log(f"  OLX: місто {city['name']} → city_id={oc['city_id']}, region_id={oc['region_id']}")
+            return oc
+    log(f"  ! OLX: не знайшов city_id для {city['name']}")
     return None
 
 
-def _olx_photo(p: Any) -> str | None:
-    link = p.get("link") if isinstance(p, dict) else p
-    if not link:
-        return None
-    return link.replace("{width}", "800").replace("{height}", "600")
+def olx_param(params: list[dict], key: str) -> Any:
+    for p in params or []:
+        if p.get("key") == key:
+            v = p.get("value")
+            return v
+    return None
 
 
-def parse_olx_state(html: str, rate: float) -> list[dict]:
-    m = re.search(r"window\.__PRERENDERED_STATE__\s*=\s*(\".*?\");\s*\n", html, re.S)
-    if not m:
-        m = re.search(r"window\.__PRERENDERED_STATE__\s*=\s*(\".*?\");", html, re.S)
-    if not m:
+def olx_item(ad: dict, rate: float, city: dict) -> dict:
+    params = ad.get("params") or []
+    price = olx_param(params, "price") or {}
+    rooms_v = olx_param(params, "number_of_rooms_string") or {}
+    rooms = OLX_ROOMS.get(rooms_v.get("key")) or (int(num(rooms_v.get("label")) or 0) or None)
+    label = lambda k: (olx_param(params, k) or {}).get("label") if isinstance(olx_param(params, k), dict) else olx_param(params, k)  # noqa: E731
+    extra = []
+    for p in params:
+        k = p.get("key", "")
+        if any(w in k for w in ("type", "wall", "material", "year", "house", "build")) and isinstance(p.get("value"), dict):
+            extra.append(p["value"].get("label"))
+    m = ad.get("map") or {}
+    loc = ad.get("location") or {}
+    return base_item(
+        "OLX", f"olx-{ad.get('id')}", city,
+        url=ad.get("url"),
+        title=ad.get("title"),
+        price_usd=to_usd(num(price.get("value")), price.get("currency", "UAH"), rate),
+        price_orig=price.get("label"),
+        rooms=rooms,
+        area=num(label("total_area")),
+        floor=int(num(label("floor")) or 0) or None,
+        floors=int(num(label("total_floors")) or 0) or None,
+        building=", ".join(x for x in extra if x),
+        condition=label("repair") or "",
+        district=(loc.get("district") or {}).get("name"),
+        address=city["name"],
+        photos=[p["link"].replace("{width}", "1200").replace("{height}", "900") for p in (ad.get("photos") or [])[:20] if p.get("link")],
+        seller=(ad.get("user") or {}).get("name") or (ad.get("contact") or {}).get("name"),
+        description=clean(ad.get("description")),
+        published=(ad.get("created_time") or "")[:10],
+        is_owner=not ad.get("business") if ad.get("business") is not None else None,
+        lat=m.get("lat"), lon=m.get("lon"), geo_approx=bool(m.get("radius")) or not m.get("show_detailed", True),
+    )
+
+
+def scrape_olx(cfg: dict, rate: float, city: dict) -> list[dict]:
+    oc = olx_resolve_city(city)
+    if not oc:
         return []
-    try:
-        state = json.loads(json.loads(m.group(1)))
-    except Exception as e:  # noqa: BLE001
-        log("  ! OLX: не вдалося розібрати стан сторінки:", e)
-        return []
-    out = []
-    for ad in _find_ads(state):
-        params = ad.get("params") or []
-        price = ad.get("price") or {}
-        reg = price.get("regularPrice") or {}
-        value, cur = num(reg.get("value")), (reg.get("currencyCode") or "UAH").upper()
-        price_usd = value if cur == "USD" else (value / rate if value and cur == "UAH" else None)
-        if value and cur == "EUR":
-            price_usd = value * 1.08
-        loc = ad.get("location") or {}
-        desc = re.sub(r"<[^>]+>", " ", ad.get("description") or "")
-        is_business = ad.get("isBusiness")
-        if is_business is None:
-            pb = _olx_param(params, r"private_business")
-            is_business = None if pb is None else str(pb).lower() == "business"
-        out.append({
-            "id": f"olx-{ad.get('id')}",
-            "source": "OLX",
-            "url": ad.get("url"),
-            "title": ad.get("title"),
-            "price_usd": round(price_usd) if price_usd else None,
-            "price_orig": f"{value:,.0f} {cur}".replace(",", " ") if value else None,
-            "rooms": int(num(_olx_param(params, r"number_of_rooms", r"кімнат")) or 0) or None,
-            "area": num(_olx_param(params, r"total_area", r"загальна площа")),
-            "floor": int(num(_olx_param(params, r"^floor\b", r"^floor ", r"\bповерх\b(?!ов)")) or 0) or None,
-            "floors": int(num(_olx_param(params, r"total_floors", r"floor_count", r"поверховість")) or 0) or None,
-            "building": " ".join(str(x) for x in [
-                _olx_param(params, r"property_type", r"тип будинку", r"тип стін", r"wall"),
-                _olx_param(params, r"year", r"рік"),
-            ] if x),
-            "condition": str(_olx_param(params, r"repair", r"ремонт", r"стан") or ""),
-            "year_built": int(num(_olx_param(params, r"year", r"рік побудов")) or 0) or None,
-            "district": loc.get("districtName") or (loc["district"].get("name") if isinstance(loc.get("district"), dict) else None),
-            "address": loc.get("cityName") or "Львів",
-            "photos": [u for u in (_olx_photo(p) for p in (ad.get("photos") or [])[:15]) if u],
-            "seller": (ad.get("user") or {}).get("name") or (ad.get("contact") or {}).get("name"),
-            "seller_since": ((ad.get("user") or {}).get("created") or "")[:4] or None,
-            "description": desc.strip()[:1200],
-            "published": (ad.get("createdTime") or ad.get("lastRefreshTime") or "")[:10] or None,
-            "is_owner": (not is_business) if is_business is not None else None,
-        })
-    return out
-
-
-def parse_olx_cards(html: str, rate: float) -> list[dict]:
-    """Запасний розбір карток, якщо стан сторінки змінився."""
-    soup = BeautifulSoup(html, "html.parser")
-    out = []
-    for card in soup.select('[data-cy="l-card"]'):
-        a = card.find("a", href=True)
-        if not a:
-            continue
-        url = a["href"]
-        if url.startswith("/"):
-            url = "https://www.olx.ua" + url
-        title_el = card.find(["h4", "h6"])
-        price_el = card.select_one('[data-testid="ad-price"]')
-        img = card.find("img")
-        text = card.get_text(" ", strip=True)
-        price_text = price_el.get_text(" ", strip=True) if price_el else ""
-        value = num(price_text)
-        usd = value if "$" in price_text else (value / rate if value else None)
-        area = num((re.search(r"(\d+[.,]?\d*)\s*м²", text) or [None, None])[1])
-        out.append({
-            "id": "olx-" + hashlib.md5(url.split("#")[0].encode()).hexdigest()[:12],
-            "source": "OLX",
-            "url": url.split("#")[0],
-            "title": title_el.get_text(" ", strip=True) if title_el else text[:80],
-            "price_usd": round(usd) if usd else None,
-            "price_orig": price_text or None,
-            "rooms": None,
-            "area": area,
-            "photos": [img.get("src")] if img and img.get("src") and img["src"].startswith("http") else [],
-            "description": "",
-            "district": (re.search(r"Львів,\s*([^-–]+)", text) or [None, None])[1],
-            "address": "Львів",
-        })
-    return out
-
-
-def scrape_olx(cfg: dict, rate: float) -> list[dict]:
-    items: list[dict] = []
-    blocked = False
-    for base in cfg["olx"]["search_urls"]:
-        for page in range(1, cfg["olx"]["pages"] + 1):
-            url = base + (f"&page={page}" if page > 1 else "")
-            html = get(url)
-            if not html:
-                blocked = blocked or page == 1
-                break
-            ads = parse_olx_state(html, rate) or parse_olx_cards(html, rate)
-            log(f"  OLX стор. {page}: {len(ads)}")
-            if not ads:
-                break
-            items.extend(ads)
-            time.sleep(2)
-    # повна сторінка оголошення: опис і фото для тих, кому їх бракує
-    for it in items:
-        if passes(it, CFG) and it.get("url") and (
-            not it.get("description") or not it.get("rooms") or len(it.get("photos") or []) < 3 or not it.get("seller")
-        ):
-            html = get(it["url"])
-            if html:
-                full = parse_olx_state(html, rate)
-                match = next((x for x in full if x.get("url") and it["url"].startswith(x["url"].split("?")[0])), None)
-                if match:
-                    for k, v in match.items():
-                        if v and (not it.get(k) or (k in ("photos", "description") and len(v) > len(it[k]))):
-                            it[k] = v
-                else:
-                    soup = BeautifulSoup(html, "html.parser")
-                    d = soup.select_one('[data-cy="ad_description"]')
-                    if d:
-                        it["description"] = d.get_text(" ", strip=True)[:1200]
-            time.sleep(1.5)
-    if blocked and not items:
-        raise RuntimeError("OLX не відповідає або блокує запити з цього сервера")
-    return items
-
-
-# ---------------------------------------------------------------- DOM.RIA
-
-def _ria_photo(path: str | None) -> str | None:
-    if not path:
-        return None
-    path = re.sub(r"\.(jpg|jpeg|png|webp)$", "", path)
-    return f"https://cdn.riastatic.com/photos/{path}xl.jpg"
-
-
-def _ria_item_from_info(info: dict, rate: float) -> dict:
-    price_usd = None
-    arr = info.get("priceArr") or {}
-    if arr.get("1"):
-        price_usd = num(arr["1"])
-    elif info.get("price") and info.get("currency_type", "").lower() in ("$", "usd"):
-        price_usd = num(info["price"])
-    elif info.get("price") and info.get("currency_type", "").lower() in ("грн", "uah"):
-        price_usd = num(info["price"]) / rate
-    photos_obj = info.get("photos") or {}
-    photos = []
-    if isinstance(photos_obj, dict):
-        for p in list(photos_obj.values())[:15]:
-            photos.append(_ria_photo(p.get("file") if isinstance(p, dict) else None))
-    if not photos and info.get("main_photo"):
-        photos.append(_ria_photo(info["main_photo"]))
-    url = info.get("beautiful_url") or ""
-    if url and not url.startswith("http"):
-        url = "https://dom.ria.com/uk/" + url.lstrip("/")
-    desc = info.get("description_uk") or info.get("description") or ""
-    agency = info.get("agency") or info.get("agency_id")
-    return {
-        "id": f"ria-{info.get('realty_id') or info.get('id')}",
-        "source": "DOM.RIA",
-        "url": url,
-        "title": " ".join(str(x) for x in [info.get("street_name_uk") or info.get("street_name"), info.get("building_number_str")] if x) or "Квартира",
-        "price_usd": round(price_usd) if price_usd else None,
-        "price_orig": None,
-        "rooms": int(info["rooms_count"]) if info.get("rooms_count") else None,
-        "area": num(info.get("total_square_meters")),
-        "floor": info.get("floor"),
-        "floors": info.get("floors_count"),
-        "building": " ".join(str(x) for x in [info.get("wall_type_uk") or info.get("wall_type"), info.get("year_of_construction")] if x),
-        "year_built": int(num(info.get("year_of_construction")) or 0) or None,
-        "condition": "",
-        "district": info.get("district_name_uk") or info.get("district_name"),
-        "address": "Львів, " + " ".join(str(x) for x in [info.get("street_name_uk") or info.get("street_name"), info.get("building_number_str")] if x),
-        "photos": [p for p in photos if p],
-        "description": re.sub(r"\s+", " ", desc).strip()[:1200],
-        "published": (info.get("publishing_date") or "")[:10] or None,
-        "is_owner": False if agency else None,
-        "seller": (info.get("user") or {}).get("name") or info.get("user_name") or info.get("agency_name"),
-        "phones": _ria_phones(info),
-    }
-
-
-def _ria_phones(info: dict) -> list[str]:
-    out = []
-    for src in (info.get("phones"), (info.get("user") or {}).get("phones")):
-        for p in src or []:
-            if isinstance(p, dict):
-                p = p.get("phone_formatted") or p.get("phone_num") or p.get("phone")
-            if p:
-                out.append(str(p))
-    return list(dict.fromkeys(out))
-
-
-def scrape_domria_api(cfg: dict, rate: float, key: str) -> list[dict]:
-    """Ощадливо щодо ліміту API (1000 запитів/міс.): 1 пошуковий запит на день
-    і запит деталей лише для оголошень, яких ще немає в базі."""
-    rc = cfg["domria"]
-    ids: list[int] = []
-    used = 0
-    for page in range(rc.get("api_pages", 1)):
-        params = {
-            "api_key": key, "category": 1, "realty_type": 2, "operation_type": 1,
-            "state_id": rc["state_id"], "city_id": rc["city_id"], "page": page,
-            "characteristic[209][from]": cfg["rooms_min"], "characteristic[209][to]": cfg["rooms_max"],
-            "sort": "created_at",
-        }
-        data = get("https://developers.ria.com/dom/search", params=params, as_json=True, tries=1)
-        used += 1
-        if not data or not data.get("items"):
-            break
-        ids.extend(data["items"])
-        log(f"  DOM.RIA API стор. {page}: {len(data['items'])}")
     items = []
-    limit = rc.get("api_info_per_run", 25)
-    skipped = 0
-    for rid in dict.fromkeys(ids):
-        known = KNOWN.get(f"ria-{rid}")
-        if known:
-            items.append(dict(known))
-            continue
-        if used >= limit:
-            skipped += 1
-            continue
-        info = get(f"https://developers.ria.com/dom/info/{rid}", params={"api_key": key, "lang_id": 4}, as_json=True, tries=1)
-        used += 1
-        if info:
-            items.append(_ria_item_from_info(info, rate))
-        time.sleep(0.4)
-    log(f"  DOM.RIA API: використано запитів {used}" + (f", відкладено {skipped} нових до наступного запуску" if skipped else ""))
+    per = 50
+    for page in range(cfg["olx"].get("pages", 10)):
+        params = {"offset": page * per, "limit": per, "category_id": 1758, "city_id": oc["city_id"],
+                  "sort_by": "created_at:desc"}
+        if oc.get("region_id"):
+            params["region_id"] = oc["region_id"]
+        data = get("https://www.olx.ua/api/v1/offers/", params=params, as_json=True)
+        if data is None and page == 0:
+            raise RuntimeError("OLX API не відповідає")
+        ads = (data or {}).get("data") or []
+        got = [olx_item(ad, rate, city) for ad in ads]
+        items.extend(got)
+        log(f"  OLX {city['name']} стор. {page + 1}: {len(got)}, підходять {sum(passes(x, cfg) for x in got)}")
+        if len(ads) < per:
+            break
+        time.sleep(1.5)
     return items
 
+
+# ================================================================ DOM.RIA
 
 RIA_LINK_RE = re.compile(r"/uk/realty-prodaja-kvartira-[\w-]+-(\d+)\.html")
+RIA_PHOTO_RE = re.compile(r"realty__(\d+)|(photos/dom/photo/\d+/\d+/(\d+)/\3)")
+RIA_PHOTO_NEW_RE = re.compile(r"photos?(?:new)?/dom/photo/([a-z0-9-]+)__(\d+)(?:f|fl|xl|m|s|b)?\.(?:jpg|jpeg|webp)")
+GEO_RE = re.compile(r"[\"']?(?:lat|latitude)[\"']?\s*[:=]\s*[\"']?(4[4-9]\.\d{3,})[\s\S]{0,80}?[\"']?(?:lng|lon|longitude)[\"']?\s*[:=]\s*[\"']?(2[2-9]\.\d{3,}|3[0-9]\.\d{3,})")
 
 
-def scrape_domria_html(cfg: dict, rate: float) -> list[dict]:
+def ria_photos_from_html(html: str, slug: str | None = None) -> list[str]:
+    seen, out = set(), []
+    for m in RIA_PHOTO_NEW_RE.finditer(html):
+        s, pid = m.group(1), m.group(2)
+        if slug and s != slug or pid in seen:
+            continue
+        seen.add(pid)
+        out.append(f"https://cdn.riastatic.com/photosnew/dom/photo/{s}__{pid}xl.jpg")
+    if slug and out:
+        return out[:20]
+    for m in RIA_PHOTO_RE.finditer(html):
+        pid = m.group(1) or m.group(3)
+        if not pid or pid in seen:
+            continue
+        seen.add(pid)
+        out.append(f"https://cdn.riastatic.com/photosnewr/dom/photo/realty__{pid}-1850x1040x90.webp" if m.group(1)
+                   else f"https://cdn.riastatic.com/{m.group(2)}xl.webp")
+    return out[:20]
+
+
+def ria_slug(url: str) -> str | None:
+    m = re.search(r"/realty-(prodaja-kvartira-[a-z0-9-]+?)-\d+\.html", url or "")
+    return m.group(1) if m else None
+
+
+def street_query(title: str) -> str | None:
+    """'вул. Антонича, 22 Санта Барбара Львів' → 'вул. Антонича, 22'."""
+    m = re.match(r"\s*((?:вул\.|просп\.|пр\.|пл\.|бульв\.|пров\.)?\s*[^,]{3,60},\s*\d+[\w/-]*)", title or "")
+    return m.group(1).strip() if m else None
+
+
+def scrape_domria(cfg: dict, rate: float, city: dict) -> list[dict]:
+    rc = city.get("domria") or {}
+    if not rc.get("slug"):
+        return []
     items: dict[str, dict] = {}
-    for base in cfg["domria"]["html_urls"]:
+    for tpl in cfg["domria"]["url_templates"]:
+        base = tpl.format(slug=rc["slug"])
         for page in range(1, cfg["domria"].get("html_pages", 3) + 1):
             html = get(base, params={"page": page} if page > 1 else None)
             if not html:
@@ -464,7 +350,6 @@ def scrape_domria_html(cfg: dict, rate: float) -> list[dict]:
                 rid = f"ria-{m.group(1)}"
                 if rid in items:
                     continue
-                # картка — найближчий предок, де є ціна
                 card = a
                 for _ in range(8):
                     card = card.parent
@@ -477,112 +362,349 @@ def scrape_domria_html(cfg: dict, rate: float) -> list[dict]:
                 rooms = num((re.search(r"(\d)\s*кімнат", text) or [None, None])[1])
                 area = num((re.search(r"(\d+[.,]?\d*)\s*м²", text) or [None, None])[1])
                 fl = re.search(r"(\d+)\s*поверх\s*з\s*(\d+)", text)
-                imgs = ria_photos_from_html(str(card), ria_slug(m.group(0)))
-                items[rid] = {
-                    "id": rid,
-                    "source": "DOM.RIA",
-                    "url": "https://dom.ria.com" + m.group(0),
-                    "title": a.get("title") or a.get_text(" ", strip=True)[:100],
-                    "price_usd": round(price) if price else None,
-                    "rooms": int(rooms) if rooms else None,
-                    "area": area,
-                    "floor": int(fl.group(1)) if fl else None,
-                    "floors": int(fl.group(2)) if fl else None,
-                    "photos": imgs[:6],
-                    "description": text[:1200],
-                    "district": None,
-                    "address": a.get("title") or "",
-                    "is_owner": True if "bez-rieltora" in base else None,
-                }
+                title = a.get("title") or a.get_text(" ", strip=True)[:100]
+                items[rid] = base_item(
+                    "DOM.RIA", rid, city,
+                    url="https://dom.ria.com" + m.group(0),
+                    title=title,
+                    price_usd=round(price) if price else None,
+                    rooms=int(rooms) if rooms else None,
+                    area=area,
+                    floor=int(fl.group(1)) if fl else None,
+                    floors=int(fl.group(2)) if fl else None,
+                    photos=ria_photos_from_html(str(card), ria_slug(m.group(0)))[:6],
+                    description=text[:1200],
+                    address=street_query(title),
+                    is_owner=True if "bez-rieltora" in base else None,
+                )
                 found += 1
-            log(f"  DOM.RIA HTML {base} стор. {page}: {found}")
+            log(f"  DOM.RIA {base} стор. {page}: {found}")
             if not found:
                 break
-            time.sleep(2)
+            time.sleep(1.5)
+    out = list(items.values())
+    enrich(out, cfg, "DOM.RIA", ria_detail, cfg["domria"].get("enrich_per_run", 50))
+    return out
+
+
+def ria_detail(it: dict, html: str) -> None:
+    photos = ria_photos_from_html(html, ria_slug(it["url"]))
+    if len(photos) > len(it.get("photos") or []):
+        it["photos"] = photos
+    soup = BeautifulSoup(html, "html.parser")
+    desc = soup.select_one("#descriptionBlock, .descriptions-ticket, [class*=description] .boxed")
+    if desc:
+        text = desc.get_text("\n", strip=True)
+        if len(text) > len(it.get("description") or ""):
+            it["description"] = text[:2000]
+    g = GEO_RE.search(html)
+    if g:
+        it["lat"], it["lon"] = float(g.group(1)), float(g.group(2))
+
+
+# ================================================================ rieltor.ua
+
+def scrape_rieltor(cfg: dict, rate: float, city: dict) -> list[dict]:
+    slug = city.get("rieltor")
+    if not slug:
+        return []
+    items: dict[str, dict] = {}
+    for rooms in cfg["rieltor"].get("rooms", [1, 2, 3, 4]):
+        for page in range(1, cfg["rieltor"].get("pages", 3) + 1):
+            html = get(f"https://rieltor.ua/{slug}/flats-sale/", params={"rooms": rooms, "page": page} if page > 1 else {"rooms": rooms})
+            if not html:
+                break
+            soup = BeautifulSoup(html, "html.parser")
+            cards = soup.select(".catalog-card")
+            found = 0
+            for c in cards:
+                a = c.find("a", href=re.compile(r"/flats-sale/view/\d+/"))
+                if not a:
+                    continue
+                rid = "rieltor-" + re.search(r"/view/(\d+)/", a["href"]).group(1)
+                if rid in items:
+                    continue
+                t = lambda sel: (c.select_one(sel).get_text(" ", strip=True) if c.select_one(sel) else "")  # noqa: E731
+                details = t(".catalog-card-details")
+                area = num((re.search(r"(\d+[.,]?\d*)\s*/", details) or re.search(r"(\d+[.,]?\d*)\s*м²", details) or [None, None])[1])
+                fl = re.search(r"поверх\s*(\d+)\s*з\s*(\d+)", details)
+                year = re.search(r"(\d{4})\s*рік", details)
+                rooms_n = num((re.search(r"(\d+)\s*кімнат", details) or [None, None])[1])
+                region = t(".catalog-card-region")
+                photos = []
+                for img in c.find_all("img"):
+                    src = img.get("src") or img.get("data-src") or ""
+                    if "/images/offers/" in src:
+                        u = re.sub(r"/lun-ua/\d+/\d+/", "/lun-ua/1140/721/", src)
+                        if u not in photos:
+                            photos.append(u)
+                author = t(".catalog-card-author-subtitle")
+                phones = [p.get_text(strip=True) for p in c.select(".catalog-card-author-phones")]
+                url = a["href"] if a["href"].startswith("http") else "https://rieltor.ua" + a["href"]
+                address = t(".catalog-card-address")
+                items[rid] = base_item(
+                    "rieltor.ua", rid, city,
+                    url=url.split("?")[0],
+                    title=address or "Квартира",
+                    price_usd=money(t(".catalog-card-price-title"), rate),
+                    price_orig=t(".catalog-card-price-title"),
+                    rooms=int(rooms_n) if rooms_n else rooms,
+                    area=area,
+                    floor=int(fl.group(1)) if fl else None,
+                    floors=int(fl.group(2)) if fl else None,
+                    year_built=int(year.group(1)) if year else None,
+                    building=f"{year.group(1)} рік" if year else "",
+                    district=", ".join(x.strip() for x in region.split(",")[1:] if x.strip()) or t(".catalog-card-chips"),
+                    address=f"{address}, {city['name']}" if address else None,
+                    photos=photos,
+                    description=clean(t(".catalog-card-description") or ""),
+                    seller=" · ".join(x for x in (t(".catalog-card-author-title"), author) if x),
+                    phones=list(dict.fromkeys(phones)),
+                    is_owner=("власник" in author.lower()) if author else None,
+                )
+                found += 1
+            log(f"  rieltor {city['name']} {rooms}к стор. {page}: {found}")
+            if not found or len(cards) < 10:
+                break
+            time.sleep(1.5)
+    out = list(items.values())
+    enrich(out, cfg, "rieltor.ua", rieltor_detail, cfg["rieltor"].get("enrich_per_run", 40))
+    return out
+
+
+def rieltor_detail(it: dict, html: str) -> None:
+    soup = BeautifulSoup(html, "html.parser")
+    photos = []
+    for u in re.findall(r"https://market-images\.lunstatic\.net/lun-ua/\d+/\d+/images/offers/(\d+)\.jpg", html):
+        full = f"https://market-images.lunstatic.net/lun-ua/1140/721/images/offers/{u}.jpg"
+        if full not in photos:
+            photos.append(full)
+    if len(photos) > len(it.get("photos") or []):
+        it["photos"] = photos[:20]
+    for sel in (".offer-view-section-text", ".offer-description", "[class*=description]"):
+        d = soup.select_one(sel)
+        if d and len(d.get_text(strip=True)) > len(it.get("description") or ""):
+            it["description"] = d.get_text("\n", strip=True)[:2000]
+            break
+    g = GEO_RE.search(html)
+    if g:
+        it["lat"], it["lon"] = float(g.group(1)), float(g.group(2))
+
+
+# ================================================================ mistechko.com
+
+def scrape_mistechko(cfg: dict, rate: float, city: dict) -> list[dict]:
+    slug = city.get("mistechko")
+    if not slug:
+        return []
+    items: dict[str, dict] = {}
+    for tpl in cfg["mistechko"]["url_templates"]:
+        for page in range(1, cfg["mistechko"].get("pages", 3) + 1):
+            url = tpl.format(slug=slug, page=page)
+            if page > 1 and "{page}" not in tpl:
+                break
+            html = get(url)
+            if not html:
+                break
+            soup = BeautifulSoup(html, "html.parser")
+            found = 0
+            for c in soup.select(".sr-2-list-item-n-in"):
+                a = c.find("a", href=re.compile(r"/prodazh-kvartir/[\w-]+-\d+\.html"))
+                if not a:
+                    continue
+                href = a["href"] if a["href"].startswith("http") else "https://mistechko.com" + a["href"]
+                rid = "mistechko-" + re.search(r"-(\d+)\.html", href).group(1)
+                if rid in items:
+                    continue
+                t = lambda sel: (c.select_one(sel).get_text(" ", strip=True) if c.select_one(sel) else "")  # noqa: E731
+                desc = t(".sr-2-item-desc")  # «3-кімн , 2/3 , 75 м² , Австрійський»
+                parts = [p.strip() for p in desc.split(",")]
+                rooms = num((re.search(r"(\d+)\s*-?\s*кімн", desc) or [None, None])[1])
+                fl = re.search(r"(\d+)\s*/\s*(\d+)", desc)
+                area = num((re.search(r"(\d+[.,]?\d*)\s*м²", desc) or [None, None])[1])
+                btype = next((p for p in parts if p and not re.search(r"\d", p)), "")
+                photos = []
+                for img in c.find_all("img"):
+                    src = img.get("data-src") or img.get("src") or ""
+                    if "/files/images/items/" in src:
+                        u = re.sub(r"/(\d+)[a-z]([0-9a-f]{8})\.jpg", r"/\1v\2.jpg", src)
+                        u = u if u.startswith("http") else "https://mistechko.com" + u
+                        if u not in photos:
+                            photos.append(u)
+                addr = t(".sr-2-item-address")
+                items[rid] = base_item(
+                    "mistechko", rid, city,
+                    url=href,
+                    title=t(".sr-2-list-item-n-title") or "Квартира",
+                    price_usd=money(t(".sr-2-list-item-n-price"), rate),
+                    price_orig=t(".sr-2-list-item-n-price"),
+                    rooms=int(rooms) if rooms else None,
+                    area=area,
+                    floor=int(fl.group(1)) if fl else None,
+                    floors=int(fl.group(2)) if fl else None,
+                    building=btype,
+                    district=addr.split(",", 1)[1].strip() if "," in addr else None,
+                    photos=photos,
+                )
+                found += 1
+            log(f"  mistechko {url} : {found}")
+            if not found:
+                break
+            time.sleep(1.5)
+    out = list(items.values())
+    enrich(out, cfg, "mistechko", mistechko_detail, cfg["mistechko"].get("enrich_per_run", 40))
+    return out
+
+
+def mistechko_detail(it: dict, html: str) -> None:
+    mid = it["id"].split("-")[1]
+    photos = []
+    for m in re.finditer(rf"(files/images/items/\d+/){mid}[a-z]([0-9a-f]{{8}})\.jpg", html):
+        full = f"https://mistechko.com/{m.group(1)}{mid}v{m.group(2)}.jpg"
+        if full not in photos:
+            photos.append(full)
+    if len(photos) > len(it.get("photos") or []):
+        it["photos"] = photos[:20]
+    soup = BeautifulSoup(html, "html.parser")
+    for sel in (".j-item-description", ".item-description", "[itemprop=description]", ".v-descr_text", ".description"):
+        d = soup.select_one(sel)
+        if d and len(d.get_text(strip=True)) > 40:
+            it["description"] = d.get_text("\n", strip=True)[:2000]
+            break
+    g = GEO_RE.search(html)
+    if g:
+        it["lat"], it["lon"] = float(g.group(1)), float(g.group(2))
+    text = it.get("description", "")
+    if re.search(r"від власник|власник", text, re.I):
+        it["is_owner"] = True
+
+
+# ================================================================ svitkvartyr.com
+
+def scrape_svitkvartyr(cfg: dict, rate: float, city: dict) -> list[dict]:
+    slug = city.get("svitkvartyr")
+    if not slug:
+        return []
+    items: dict[str, dict] = {}
+    for tpl in cfg["svitkvartyr"]["url_templates"]:
+        for page in range(1, cfg["svitkvartyr"].get("pages", 3) + 1):
+            base = tpl.format(slug=slug)
+            html = get(base, params={"page": page} if page > 1 else None)
+            if not html:
+                break
+            soup = BeautifulSoup(html, "html.parser")
+            found = 0
+            for c in soup.select(".advert-card"):
+                a = c.find("a", href=re.compile(r"/adverts/\d+"))
+                if not a:
+                    continue
+                rid = "svit-" + re.search(r"/adverts/(\d+)", a["href"]).group(1)
+                if rid in items:
+                    continue
+                vals = {}
+                for one in c.select(".acd-one"):
+                    v = one.select_one(".acd-one-value")
+                    lbl = one.select_one(".acd-one-label")
+                    if v and lbl:
+                        vals[lbl.get_text(" ", strip=True).lower()] = v.get_text(" ", strip=True)
+                text = c.get_text(" ", strip=True)
+                price_txt = next((f"{v} {k}" for k, v in vals.items() if "грн" in k or "$" in k or "дол" in k), "")
+                if not price_txt:
+                    pm = re.search(r"([\d\s]{4,})\s*(грн|\$|USD|€)", text)
+                    price_txt = pm.group(0) if pm else ""
+                rooms = num(next((v for k, v in vals.items() if "кімнат" in k), None))
+                area = num(next((v for k, v in vals.items() if "кв" in k), None))
+                fl = re.search(r"(\d+)\s*/\s*(\d+)\s*поверх", text)
+                material = next((v for k, v in vals.items() if "матеріал" in k), "")
+                btype = next((v for k, v in vals.items() if "тип" in k), "")
+                title = c.select_one(".title").get_text(" ", strip=True) if c.select_one(".title") else "Квартира"
+                dm = re.search(r"тип будівлі\s*(.+)$", text, re.S)
+                items[rid] = base_item(
+                    "svitkvartyr", rid, city,
+                    url="https://svitkvartyr.com" + re.search(r"/adverts/\d+", a["href"]).group(0),
+                    title=title,
+                    price_usd=money(price_txt, rate),
+                    price_orig=price_txt,
+                    rooms=int(rooms) if rooms else None,
+                    area=area,
+                    floor=int(fl.group(1)) if fl else None,
+                    floors=int(fl.group(2)) if fl else None,
+                    building=", ".join(x for x in (btype, material) if x),
+                    district=title.split(",", 1)[1].strip() if "," in title else None,
+                    address=f"вул. {title.split(',')[0]}, {city['name']}" if "," in title else None,
+                    description=clean(dm.group(1)) if dm else "",
+                )
+                found += 1
+            log(f"  svitkvartyr {base} стор. {page}: {found}")
+            if not found:
+                break
+            time.sleep(1.5)
     return list(items.values())
 
 
-RIA_PHOTO_RE = re.compile(r"realty__(\d+)|(photos/dom/photo/\d+/\d+/(\d+)/\3)")
-RIA_PHOTO_NEW_RE = re.compile(r"photos?(?:new)?/dom/photo/([a-z0-9-]+)__(\d+)(?:f|fl|xl|m|s|b)?\.(?:jpg|jpeg|webp)")
+# ================================================================ спільне: сторінка оголошення, геокодування
 
-
-def ria_photos_from_html(html: str, slug: str | None = None) -> list[str]:
-    """Усі фото оголошення DOM.RIA у великому розмірі.
-    slug — частина адреси оголошення (prodaja-kvartira-lvov-...-ulitsa), щоб не брати фото
-    схожих квартир, які DOM.RIA показує на тій самій сторінці."""
-    seen, out = set(), []
-    for m in RIA_PHOTO_NEW_RE.finditer(html):
-        s, pid = m.group(1), m.group(2)
-        if slug and s != slug or pid in seen:
-            continue
-        seen.add(pid)
-        out.append(f"https://cdn.riastatic.com/photosnew/dom/photo/{s}__{pid}xl.jpg")
-    for m in RIA_PHOTO_RE.finditer(html):
-        pid = m.group(1) or m.group(3)
-        if not pid or pid in seen:
-            continue
-        seen.add(pid)
-        if m.group(1):
-            out.append(f"https://cdn.riastatic.com/photosnewr/dom/photo/realty__{pid}-1850x1040x90.webp")
-        else:
-            out.append(f"https://cdn.riastatic.com/{m.group(2)}xl.webp")
-    return out[:20]
-
-
-def ria_slug(url: str) -> str | None:
-    m = re.search(r"/realty-(prodaja-kvartira-[a-z0-9-]+?)-\d+\.html", url or "")
-    return m.group(1) if m else None
-
-
-def ria_enrich(items: list[dict], cfg: dict) -> None:
-    """Для нових підхожих оголошень відкриває сторінку оголошення: всі фото й повний опис."""
+def enrich(items: list[dict], cfg: dict, name: str, fn: Callable[[dict, str], None], limit: int) -> None:
+    """Для нових підхожих оголошень відкриває сторінку оголошення: всі фото, опис, координати."""
     n = 0
     for it in items:
-        if not passes(it, cfg) or len(it.get("photos") or []) >= 4 or it["id"] in KNOWN and len(KNOWN[it["id"]].get("photos") or []) >= 4:
+        if not passes(it, cfg):
             continue
-        if n >= cfg["domria"].get("enrich_per_run", 40):
+        old = KNOWN.get(it["id"]) or {}
+        if len(old.get("photos") or []) >= 4 and old.get("description"):
+            continue
+        if n >= limit:
             break
         html = get(it["url"])
         n += 1
-        if not html:
-            continue
-        photos = ria_photos_from_html(html, ria_slug(it["url"]))
-        if not photos and n <= 2:
-            sample = sorted(set(re.findall(r"https?:\\?/\\?/[^\"'\s]*riastatic[^\"'\s]{0,120}", html)))[:8]
-            log(f"  [діагностика фото] {it['url']}: знайдено {len(sample)}: " + " | ".join(sample))
-            log(f"  [діагностика фото] 'photo' трапляється {html.count('photo')} разів, довжина {len(html)}")
-        if len(photos) > len(it.get("photos") or []):
-            it["photos"] = photos
-        soup = BeautifulSoup(html, "html.parser")
-        desc = soup.select_one("#descriptionBlock, [class*=description] .boxed, .descriptions-ticket")
-        if desc:
-            text = desc.get_text(" ", strip=True)
-            if len(text) > len(it.get("description") or ""):
-                it["description"] = text[:2000]
+        if html:
+            try:
+                fn(it, html)
+            except Exception as e:  # noqa: BLE001
+                log(f"  ! {name}: не вдалося розібрати {it['url']}: {e}")
         time.sleep(1)
-    log(f"  DOM.RIA: відкрито сторінок оголошень {n}")
+    log(f"  {name}: відкрито сторінок оголошень {n}")
 
 
-def scrape_domria(cfg: dict, rate: float) -> list[dict]:
-    items = _scrape_domria(cfg, rate)
-    ria_enrich(items, cfg)
-    return items
+def geocode(items: list[dict], cfg: dict) -> None:
+    """Координати за адресою через OpenStreetMap Nominatim (з кешем, ≤1 запит/с)."""
+    cache = json.loads(GEOCACHE_PATH.read_text(encoding="utf-8")) if GEOCACHE_PATH.exists() else {}
+    city_names = {c["key"]: c["name"] for c in cfg["cities"]}
+    n = 0
+    for it in items:
+        if it.get("lat") or not passes(it, cfg):
+            continue
+        addr = (it.get("address") or "").strip()
+        if not addr or addr in city_names.values():
+            continue
+        q = addr if city_names.get(it.get("city"), "") in addr else f"{addr}, {city_names.get(it.get('city'), '')}"
+        if q not in cache:
+            if n >= cfg.get("geocode_per_run", 60):
+                continue
+            res = get("https://nominatim.openstreetmap.org/search", as_json=True, tries=1,
+                      params={"q": q, "format": "json", "limit": 1, "countrycodes": "ua", "accept-language": "uk"},
+                      headers={"User-Agent": "FlatSearcher/1.0 (personal apartment search; github.com/Gaspode3/FlatSearcher)"})
+            n += 1
+            cache[q] = [float(res[0]["lat"]), float(res[0]["lon"])] if res else None
+            time.sleep(1.1)
+        if cache.get(q):
+            it["lat"], it["lon"] = cache[q]
+            it["geo_approx"] = True
+    GEOCACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    GEOCACHE_PATH.write_text(json.dumps(cache, ensure_ascii=False, indent=0), encoding="utf-8")
+    log(f"  Геокодування: запитів {n}")
 
 
-def _scrape_domria(cfg: dict, rate: float) -> list[dict]:
-    key = os.environ.get("DOMRIA_API_KEY", "").strip()
-    if key:
-        try:
-            items = scrape_domria_api(cfg, rate, key)
-            if items:
-                return items
-            log("  ! DOM.RIA API нічого не повернуло, пробую HTML")
-        except Exception as e:  # noqa: BLE001
-            log("  ! DOM.RIA API помилка:", e)
-    return scrape_domria_html(cfg, rate)
+# ================================================================ merge & save
 
+SOURCES: dict[str, tuple[str, Callable]] = {
+    "olx": ("OLX", scrape_olx),
+    "domria": ("DOM.RIA", scrape_domria),
+    "rieltor": ("rieltor.ua", scrape_rieltor),
+    "mistechko": ("mistechko", scrape_mistechko),
+    "svitkvartyr": ("svitkvartyr", scrape_svitkvartyr),
+}
 
-# ---------------------------------------------------------------- merge & save
 
 def load_existing() -> dict:
     if DATA_PATH.exists():
@@ -591,43 +713,56 @@ def load_existing() -> dict:
 
 
 def main() -> int:
-    global DEBUG, CFG
+    global DEBUG, CFG, KNOWN, DATA_PATH, NEW_PATH
     ap = argparse.ArgumentParser()
     ap.add_argument("--debug", action="store_true")
+    ap.add_argument("--sources", help="через кому: " + ", ".join(SOURCES) + "; за замовчуванням — default_sources з config.json")
+    ap.add_argument("--out", default="docs/data/listings.json", help="файл даних для сайту")
+    ap.add_argument("--new", default="new_listings.md", help="файл зі списком нових варіантів")
     args = ap.parse_args()
     DEBUG = args.debug
+    DATA_PATH = ROOT / args.out
+    NEW_PATH = ROOT / args.new
     CFG = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 
-    global KNOWN
-    KNOWN = {it["id"]: it for it in load_existing().get("items", [])}
+    existing = load_existing()
+    KNOWN = {it["id"]: it for it in existing.get("items", [])}
     rate = usd_rate()
     log(f"Курс USD: {rate:.2f}")
 
     scraped: list[dict] = []
     errors: list[str] = []
-    for name, fn, enabled in (
-        ("OLX", scrape_olx, CFG["olx"]["enabled"]),
-        ("DOM.RIA", scrape_domria, CFG["domria"]["enabled"]),
-    ):
-        if not enabled:
-            continue
-        log(f"→ {name}")
-        try:
-            got = fn(CFG, rate)
-            log(f"  всього з {name}: {len(got)}")
-            scraped.extend(got)
-        except Exception as e:  # noqa: BLE001
-            errors.append(f"{name}: {e}")
-            log(f"  ! {name} впав: {e}")
+    ok_sources: set[tuple[str, str]] = set()
+    wanted = [w.strip() for w in (args.sources or ",".join(CFG["default_sources"])).split(",") if w.strip()]
+    cities = [c for c in CFG["cities"] if c.get("enabled")]
+    for city in cities:
+        for key in wanted:
+            if key not in SOURCES:
+                log(f"  ! невідоме джерело {key}")
+                continue
+            name, fn = SOURCES[key]
+            log(f"→ {name} · {city['name']}")
+            try:
+                got = fn(CFG, rate, city)
+                log(f"  всього з {name}: {len(got)}, підходять {sum(passes(x, CFG) for x in got)}")
+                scraped.extend(got)
+                if got:
+                    ok_sources.add((name, city["key"]))
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{name} ({city['name']}): {e}")
+                log(f"  ! {name} впав: {e}")
 
-    existing = load_existing()
+    try:
+        geocode(scraped, CFG)
+    except Exception as e:  # noqa: BLE001
+        log("  ! геокодування:", e)
+
     by_id = {it["id"]: it for it in existing.get("items", [])}
     new_items = []
     for it in scraped:
         if not it.get("id") or not it.get("url") or not passes(it, CFG):
             continue
         it["flags"] = make_flags(it, CFG)
-        it["score"] = score(it)
         it["phones"] = list(dict.fromkeys((it.get("phones") or []) + phones_from_text(it.get("description", ""))))
         old = by_id.get(it["id"])
         if old:
@@ -639,24 +774,26 @@ def main() -> int:
             for k, v in old.items():  # не губимо дані, яких цього разу не вдалося зібрати
                 if k not in it or it[k] in (None, "", []):
                     it[k] = v
+                elif k == "photos" and len(v or []) > len(it[k]):
+                    it[k] = v
         else:
             it["first_seen"] = TODAY
             it["price_history"] = [{"date": TODAY, "usd": it["price_usd"]}]
             new_items.append(it)
+        it["score"] = score(it)
         it["last_seen"] = TODAY
         it["active"] = True
         by_id[it["id"]] = it
 
+    # Оголошення, якого сьогодні не було, позначаємо зниклим — лише якщо його джерело
+    # для цього міста сьогодні спрацювало (інакше це збій збору, а не продаж).
     cutoff = (dt.date.today() - dt.timedelta(days=CFG["keep_inactive_days"])).isoformat()
-    # API DOM.RIA щодня бачить лише першу сторінку свіжих оголошень, тож старіші
-    # оголошення звідти вважаємо активними ще 30 днів після останньої появи.
-    ria_cutoff = (dt.date.today() - dt.timedelta(days=30)).isoformat()
+    src_name = {"olx": "OLX", "ria": "DOM.RIA", "rieltor": "rieltor.ua", "mistechko": "mistechko", "svit": "svitkvartyr"}
     for it in by_id.values():
         if it.get("source") == "Вручну" or it.get("last_seen", TODAY) >= TODAY:
             continue
-        if it["id"].startswith("ria-") and os.environ.get("DOMRIA_API_KEY") and it.get("last_seen", TODAY) >= ria_cutoff:
-            continue
-        it["active"] = False
+        if (src_name.get(it["id"].split("-")[0]), it.get("city", "lviv")) in ok_sources:
+            it["active"] = False
     items = [it for it in by_id.values() if it.get("active") or it.get("last_seen", TODAY) >= cutoff or it.get("source") == "Вручну"]
     items.sort(key=lambda x: (-x.get("score", 0), x.get("price_usd") or 0))
 
@@ -664,31 +801,33 @@ def main() -> int:
     DATA_PATH.write_text(json.dumps({
         "updated": dt.datetime.now(dt.timezone.utc).isoformat(timespec="minutes"),
         "usd_rate": round(rate, 2),
-        "criteria": {k: CFG[k] for k in ("rooms_min", "rooms_max", "budget_usd", "max_price_usd")},
+        "criteria": {k: CFG[k] for k in ("rooms_min", "rooms_max", "budget_usd", "max_price_usd", "default_rooms")},
+        "cities": [{"key": c["key"], "name": c["name"]} for c in cities],
         "errors": errors,
         "items": items,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
 
-    if new_items:
-        new_items.sort(key=lambda x: -x["score"])
-        lines = [f"Знайдено нових варіантів: **{len(new_items)}**\n"]
-        for it in new_items[:30]:
+    NEW_PATH.parent.mkdir(parents=True, exist_ok=True)
+    notify = [it for it in new_items if (it.get("rooms") or 0) >= CFG["notify_rooms_min"] and not it["flags"]["over_budget"]]
+    if notify:
+        notify.sort(key=lambda x: -x["score"])
+        site = CFG.get("site_url", "").rstrip("/")
+        lines = [f"Нових варіантів у бюджеті ({CFG['notify_rooms_min']}+ кімнати): **{len(notify)}**\n"]
+        for it in notify[:30]:
             tags = [t for t, on in (("🏛 старий фонд", it["flags"]["old_fund"]), ("🔨 під ремонт", it["flags"]["needs_repair"]),
-                                    ("👤 власник", it["flags"]["owner"]), ("💸 вище бюджету", it["flags"]["over_budget"])) if on]
+                                    ("👤 власник", it["flags"]["owner"])) if on]
+            link = f"{site}/#id={it['id']}" if site else it["url"]
             lines.append(
                 f"- **${it['price_usd']:,}** · {it.get('rooms') or '?'} кімн. · {it.get('area') or '?'} м² · "
-                f"{it.get('district') or ''} — [{it.get('title') or 'оголошення'}]({it['url']}) {' '.join(tags)}".replace(",", " ")
+                f"{it.get('district') or ''} — [{it.get('title') or 'оголошення'}]({link}) {' '.join(tags)}".replace(",", " ")
             )
         NEW_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
     else:
         NEW_PATH.write_text("", encoding="utf-8")
 
-    log(f"Готово: {len(items)} у базі, нових {len(new_items)}, помилок {len(errors)}")
+    log(f"Готово: {len(items)} у базі, нових {len(new_items)} (для сповіщення {len(notify)}), помилок {len(errors)}")
     return 0
 
-
-CFG: dict = {}
-KNOWN: dict = {}
 
 if __name__ == "__main__":
     sys.exit(main())

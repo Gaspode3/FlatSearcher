@@ -6,6 +6,8 @@
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
   let data = { items: [] };
+  let cityNames = { lviv: "Львів" };
+  const cityName = (k) => cityNames[k || "lviv"];
   let mine = {};
   let tab = "unseen";
   try { mine = JSON.parse(localStorage.getItem(STORE) || "{}"); } catch { mine = {}; }
@@ -19,18 +21,18 @@
   const inTab = (it, t) => {
     const st = mine[it.id]?.status;
     if (t === "unseen") return !isSeen(it) && !REJECTED.has(st);
-    if (t === "picked") return PICKED.has(st);
+    if (t === "picked") return !!mine[it.id]?.fav || PICKED.has(st);
     if (t === "rejected") return REJECTED.has(st);
     return !REJECTED.has(st);
   };
 
-  const filterIds = ["f-rooms", "f-price", "f-area", "f-sort", "f-old", "f-repair", "f-owner", "f-budget", "f-inactive"];
+  const filterIds = ["f-city", "f-rooms", "f-price", "f-area", "f-sort", "f-old", "f-repair", "f-owner", "f-budget", "f-inactive"];
   const saveFilters = () => {
     const f = {};
     filterIds.forEach((id) => { const e = $(id); f[id] = e.type === "checkbox" ? e.checked : e.value; });
-    try { localStorage.setItem(STORE + "-filters", JSON.stringify(f)); } catch {}
+    try { localStorage.setItem(STORE + "-filters2", JSON.stringify(f)); } catch {}
   };
-  const readFilters = () => { try { return JSON.parse(localStorage.getItem(STORE + "-filters") || "{}"); } catch { return {}; } };
+  const readFilters = () => { try { return JSON.parse(localStorage.getItem(STORE + "-filters2") || "{}"); } catch { return {}; } };
 
   const cardLink = (it) => location.origin + location.pathname + "#id=" + encodeURIComponent(it.id);
   const focusFromHash = () => { const m = location.hash.match(/^#id=(.+)$/); return m ? decodeURIComponent(m[1]) : null; };
@@ -38,6 +40,41 @@
   const copy = async (text, msg) => {
     try { await navigator.clipboard.writeText(text); toast(msg); }
     catch { window.prompt("Скопіюйте:", text); }
+  };
+
+  const mapsLink = (it) => `https://www.google.com/maps/search/?api=1&query=${it.lat},${it.lon}`;
+  function mapSlide(it) {
+    const z = it.geo_approx ? 15 : 16;
+    const n = 2 ** z, lat = it.lat * Math.PI / 180;
+    const xt = (it.lon + 180) / 360 * n;
+    const yt = (1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * n;
+    const bx = Math.floor(xt) - 1, by = Math.floor(yt) - 1;
+    const a = el("a", "mapslide");
+    a.href = mapsLink(it); a.target = "_blank"; a.rel = "noopener";
+    a.title = "Відкрити на карті";
+    const tiles = el("div", "tiles");
+    tiles.style.left = `calc(50% - ${(xt - bx) * 256}px)`;
+    tiles.style.top = `calc(50% - ${(yt - by) * 256}px)`;
+    for (let dx = 0; dx < 3; dx++) for (let dy = 0; dy < 3; dy++) {
+      const img = el("img");
+      img.loading = "lazy"; img.alt = "";
+      img.onerror = () => { img.style.visibility = "hidden"; };
+      img.src = `https://tile.openstreetmap.org/${z}/${bx + dx}/${by + dy}.png`;
+      img.style.left = dx * 256 + "px"; img.style.top = dy * 256 + "px";
+      tiles.append(img);
+    }
+    a.append(tiles);
+    if (it.geo_approx) a.append(el("span", "zone"));
+    a.append(el("span", "pin", "📍"));
+    a.append(el("span", "maplabel", it.geo_approx ? "📍 Приблизно · відкрити карту" : "📍 Відкрити карту"));
+    a.append(el("span", "attr", "© OpenStreetMap"));
+    return a;
+  }
+  const roomsMatch = (rooms, f) => {
+    if (!f || f === "all") return true;
+    if (rooms == null) return true;
+    if (f.endsWith("+")) return rooms >= Number(f.slice(0, -1));
+    return rooms === Number(f);
   };
 
   const daysAgo = (iso) => Math.floor((Date.now() - new Date(iso + "T00:00:00").getTime()) / 864e5);
@@ -110,8 +147,10 @@
     const strip = node.querySelector(".strip");
     const photos = (it.photos || []).filter(Boolean);
     const pcount = node.querySelector(".pcount");
+    const hasMap = it.lat != null && it.lon != null;
     if (photos.length) {
       photos.forEach((src, i) => {
+        if (i === 1 && hasMap) strip.append(mapSlide(it));
         const img = el("img");
         img.loading = i ? "lazy" : "eager";
         img.src = src;
@@ -119,13 +158,15 @@
         img.onerror = () => { img.remove(); if (!strip.querySelector("img")) strip.append(el("span", "noimg", "🏠")); };
         strip.append(img);
       });
-      if (photos.length > 1) pcount.textContent = `1 / ${photos.length}`;
+      if (photos.length === 1 && hasMap) strip.append(mapSlide(it));
+      const total = strip.children.length;
+      if (total > 1) pcount.textContent = `1 / ${total}`;
       else pcount.remove();
       strip.addEventListener("scroll", () => {
         const i = Math.round(strip.scrollLeft / strip.clientWidth) + 1;
-        pcount.textContent = `${i} / ${photos.length}`;
+        if (pcount.isConnected) pcount.textContent = `${i} / ${strip.children.length}`;
       }, { passive: true });
-      if (photos.length > 1) {
+      if (total > 1) {
         const gal = node.querySelector(".gallery");
         for (const [cls, dir, sym] of [["prev", -1, "‹"], ["next", 1, "›"]]) {
           const b = el("button", "navbtn " + cls, sym);
@@ -134,10 +175,23 @@
           gal.append(b);
         }
       }
+    } else if (hasMap) {
+      strip.append(mapSlide(it));
+      pcount.remove();
     } else {
       strip.append(el("span", "noimg", "🏠"));
       pcount.remove();
     }
+    const favBtn = node.querySelector(".fav");
+    const paintFav = () => { const on = !!mine[it.id]?.fav; favBtn.classList.toggle("on", on); favBtn.textContent = on ? "★" : "☆"; favBtn.setAttribute("aria-label", on ? "Прибрати з обраних" : "Додати в обрані"); };
+    paintFav();
+    favBtn.onclick = () => {
+      const on = !mine[it.id]?.fav;
+      setMine(it.id, { fav: on, seen: true });
+      paintFav();
+      toast(on ? "⭐ Додано в обрані" : "Прибрано з обраних");
+      if (tab === "picked" && !on) { node.classList.add("leaving"); setTimeout(render, 300); } else updateCounts();
+    };
     node.querySelector(".src").textContent = it.source;
     if (!isSeen(it) && it.first_seen && daysAgo(it.first_seen) <= 2) node.querySelector(".newtag").hidden = false;
 
@@ -163,6 +217,7 @@
       ["Кімнат", it.rooms],
       ["Площа", it.area ? `${it.area} м²` : null],
       ["Поверх", it.floor ? `${it.floor}${it.floors ? " з " + it.floors : ""}` : null],
+      ["Місто", cityName(it.city)],
       ["Район", it.district],
       ["Будинок", it.building],
       ["Опубліковано", it.published],
@@ -174,6 +229,11 @@
       const d = el("div");
       d.append(el("dt", null, k), el("dd", null, String(v)));
       dl.append(d);
+    }
+    if (hasMap) {
+      const d = el("div"), dd = el("dd"), a = el("a", "maplink", it.geo_approx ? "📍 Карта (приблизно)" : "📍 На карті");
+      a.href = mapsLink(it); a.target = "_blank"; a.rel = "noopener";
+      dd.append(a); d.append(el("dt", null, "Локація"), dd); dl.append(d);
     }
 
     const badges = node.querySelector(".badges");
@@ -236,12 +296,14 @@
   // ---------- list
   function filtered() {
     const rooms = $("f-rooms").value;
+    const city = $("f-city").value;
     const maxP = Number($("f-price").value) || Infinity;
     const minA = Number($("f-area").value) || 0;
     const budget = data.criteria?.budget_usd || Infinity;
     return data.items.filter((it) => {
       const f = it.flags || {};
-      if (rooms && String(it.rooms) !== rooms) return false;
+      if (!roomsMatch(it.rooms, rooms)) return false;
+      if (city && (it.city || "lviv") !== city) return false;
       if ((it.price_usd || 0) > maxP) return false;
       if ((it.area || 0) < minA) return false;
       if ($("f-old").checked && !f.old_fund) return false;
@@ -303,15 +365,21 @@
     }
     const upd = data.updated ? new Date(data.updated).toLocaleString("uk-UA", { dateStyle: "medium", timeStyle: "short" }) : "—";
     const c = data.criteria || {};
-    $("meta").textContent = `${c.rooms_min}–${c.rooms_max} кімнати · бюджет $${fmt(c.budget_usd)} (показую до $${fmt(c.max_price_usd)}) · оновлено ${upd}`;
+    $("meta").textContent = `Бюджет $${fmt(c.budget_usd)} (показую до $${fmt(c.max_price_usd)}) · оновлено ${upd}`;
     if (data.errors && data.errors.length) $("meta").append(el("span", "err", ` · помилки збору: ${data.errors.join("; ")}`));
     $("f-price").placeholder = c.max_price_usd || "";
+    const cities = data.cities && data.cities.length ? data.cities : [{ key: "lviv", name: "Львів" }];
+    cityNames = Object.fromEntries(cities.map((x) => [x.key, x.name]));
+    $("f-city").replaceChildren(...(cities.length > 1 ? [new Option("Усі міста", "")] : []), ...cities.map((x) => new Option(x.name, x.key)));
+    $("f-rooms").value = c.default_rooms || "3+";
     const saved = readFilters();
     filterIds.forEach((id) => {
       const e = $(id);
       if (saved[id] !== undefined) { if (e.type === "checkbox") e.checked = saved[id]; else e.value = saved[id]; }
       e.addEventListener(e.tagName === "INPUT" && e.type !== "checkbox" ? "input" : "change", render);
     });
+    if (!$("f-rooms").value) $("f-rooms").value = c.default_rooms || "3+";
+    if ($("f-city").selectedIndex < 0) $("f-city").selectedIndex = 0;
     render();
   }
   load();
