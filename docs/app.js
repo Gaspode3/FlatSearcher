@@ -522,7 +522,7 @@
     $("focusbar").hidden = !focused.length && !(focusId && focusId.startsWith("zk-"));
     if (focusId && focusId.startsWith("zk-")) { $("list").replaceChildren(); $("count").textContent = ""; return; }
     const items = focused.length ? focused : filtered().filter((it) => inTab(it, tab)).sort(sorters[$("f-sort").value] || sorters.score);
-    $("count").textContent = `Показано ${items.length} з ${data.items.length}`;
+    $("count").textContent = `Знайдено ${items.length} з ${data.items.length}`;
     const list = $("list");
     list.replaceChildren();
     if (!items.length) {
@@ -530,7 +530,22 @@
       list.append(el("p", "empty", msg));
       return;
     }
-    for (const it of items) list.append(buildCard(it));
+    const PAGE = 24;
+    let shown = 0;
+    const more = el("button", "btn more-btn");
+    const io = "IntersectionObserver" in window ? new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) showMore(); }, { rootMargin: "800px" }) : null;
+    function showMore() {
+      const frag = document.createDocumentFragment();
+      for (const it of items.slice(shown, shown + PAGE)) frag.append(buildCard(it));
+      shown = Math.min(shown + PAGE, items.length);
+      more.before(frag);
+      if (shown >= items.length) { more.remove(); if (io) io.disconnect(); }
+      else more.textContent = `Показати ще (${items.length - shown})`;
+    }
+    more.onclick = showMore;
+    list.append(more);
+    showMore();
+    if (io && more.isConnected) io.observe(more);
   }
 
   const clearFocus = () => { focusId = null; history.replaceState(null, "", location.pathname); };

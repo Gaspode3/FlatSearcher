@@ -1293,7 +1293,7 @@ def main() -> int:
         "complexes": complexes,
         "errors": errors,
         "items": items,
-    }, ensure_ascii=False, indent=1), encoding="utf-8")
+    }, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
     NEW_PATH.parent.mkdir(parents=True, exist_ok=True)
     def worth(it: dict) -> bool:
