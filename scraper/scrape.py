@@ -533,6 +533,10 @@ def ria_enrich(items: list[dict], cfg: dict) -> None:
         if not html:
             continue
         photos = ria_photos_from_html(html)
+        if not photos and n <= 2:
+            sample = sorted(set(re.findall(r"https?:\\?/\\?/[^\"'\s]*riastatic[^\"'\s]{0,120}", html)))[:8]
+            log(f"  [діагностика фото] {it['url']}: знайдено {len(sample)}: " + " | ".join(sample))
+            log(f"  [діагностика фото] 'photo' трапляється {html.count('photo')} разів, довжина {len(html)}")
         if len(photos) > len(it.get("photos") or []):
             it["photos"] = photos
         soup = BeautifulSoup(html, "html.parser")
