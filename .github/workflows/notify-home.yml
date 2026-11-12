@@ -1,0 +1,23 @@
+name: Сповіщення з домашнього ПК
+
+on:
+  push:
+    paths:
+      - notify/home-new.md
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Створити issue про нові варіанти з OLX і rieltor
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -s notify/home-new.md ]; then
+            gh issue create --title "🏠 Нові квартири з OLX і rieltor $(TZ=Europe/Kyiv date +%d.%m)" --body-file notify/home-new.md
+          fi

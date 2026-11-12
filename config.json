@@ -12,9 +12,7 @@
   "keep_inactive_days": 14,
   "geocode_per_run": 60,
   "default_sources": [
-    "olx",
     "domria",
-    "rieltor",
     "mistechko",
     "svitkvartyr"
   ],
@@ -115,5 +113,14 @@
     ]
   },
   "fresh_threshold": 50,
-  "agency_phone_threshold": 10
+  "agency_phone_threshold": 10,
+  "home_sources": [
+    "olx",
+    "rieltor"
+  ],
+  "data_files": [
+    "docs/data/listings.json",
+    "docs/data/listings-home.json"
+  ],
+  "_sources_comment": "default_sources збирає GitHub щоранку; home_sources — домашній комп'ютер (OLX і rieltor.ua блокують сервери GitHub). Див. windows/."
 }

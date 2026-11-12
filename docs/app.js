@@ -379,8 +379,25 @@
 
   async function load() {
     try {
-      const r = await fetch("data/listings.json?ts=" + Date.now());
-      data = await r.json();
+      const files = ["data/listings.json", "data/listings-home.json"];
+      const parts = (await Promise.all(files.map((f) =>
+        fetch(f + "?ts=" + Date.now()).then((r) => (r.ok ? r.json() : null)).catch(() => null)))).filter(Boolean);
+      if (!parts.length) throw new Error("no data");
+      const byId = new Map();
+      for (const p of parts) for (const it of p.items || []) {
+        const prev = byId.get(it.id);
+        if (!prev || (it.last_seen || "") >= (prev.last_seen || "")) byId.set(it.id, it);
+      }
+      const cities = new Map();
+      parts.forEach((p) => (p.cities || []).forEach((c) => cities.set(c.key, c)));
+      data = {
+        ...parts[0],
+        items: [...byId.values()],
+        cities: [...cities.values()],
+        updated: parts.map((p) => p.updated).filter(Boolean).sort().pop(),
+        updated_home: parts[1]?.updated,
+        errors: parts.flatMap((p) => p.errors || []),
+      };
     } catch {
       $("meta").textContent = "Не вдалося завантажити дані.";
       return;
@@ -388,6 +405,7 @@
     const upd = data.updated ? new Date(data.updated).toLocaleString("uk-UA", { dateStyle: "medium", timeStyle: "short" }) : "—";
     const c = data.criteria || {};
     $("meta").textContent = `Бюджет $${fmt(c.budget_usd)} (показую до $${fmt(c.max_price_usd)}) · оновлено ${upd}`;
+    if (data.updated_home) $("meta").append(` · OLX і rieltor з домашнього ПК: ${new Date(data.updated_home).toLocaleString("uk-UA", { dateStyle: "medium", timeStyle: "short" })}`);
     if (data.errors && data.errors.length) $("meta").append(el("span", "err", ` · помилки збору: ${data.errors.join("; ")}`));
     $("f-price").placeholder = c.max_price_usd || "";
     const cities = data.cities && data.cities.length ? data.cities : [{ key: "lviv", name: "Львів" }];

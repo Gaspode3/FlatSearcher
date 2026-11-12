@@ -926,9 +926,15 @@ def main() -> int:
     ap.add_argument("--sources", help="через кому: " + ", ".join(SOURCES) + "; за замовчуванням — default_sources з config.json")
     ap.add_argument("--out", default="docs/data/listings.json", help="файл даних для сайту")
     ap.add_argument("--new", default="new_listings.md", help="файл зі списком нових варіантів")
+    ap.add_argument("--geocache", default="docs/data/geocache.json", help="кеш координат")
+    ap.add_argument("--home", action="store_true", help="запуск з домашнього комп'ютера: home_sources → listings-home.json")
     args = ap.parse_args()
     DEBUG = args.debug
+    global GEOCACHE_PATH
+    if args.home:
+        args.out, args.new, args.geocache = "docs/data/listings-home.json", "notify/home-new.md", "docs/data/geocache-home.json"
     DATA_PATH = ROOT / args.out
+    GEOCACHE_PATH = ROOT / args.geocache
     NEW_PATH = ROOT / args.new
     CFG = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 
@@ -940,7 +946,8 @@ def main() -> int:
     scraped: list[dict] = []
     errors: list[str] = []
     ok_sources: set[tuple[str, str]] = set()
-    wanted = [w.strip() for w in (args.sources or ",".join(CFG["default_sources"])).split(",") if w.strip()]
+    default = CFG["home_sources"] if args.home else CFG["default_sources"]
+    wanted = [w.strip() for w in (args.sources or ",".join(default)).split(",") if w.strip()]
     cities = [c for c in CFG["cities"] if c.get("enabled")]
     for city in cities:
         for key in wanted:
@@ -965,6 +972,11 @@ def main() -> int:
         log("  ! геокодування:", e)
 
     by_id = {it["id"]: it for it in existing.get("items", [])}
+    # Оголошення OLX і rieltor «належать» домашньому ПК, щойно з'явиться його файл даних
+    home_file = ROOT / "docs" / "data" / "listings-home.json"
+    if not args.home and home_file.exists():
+        home_names = {SOURCES[k][0] for k in CFG.get("home_sources", []) if k in SOURCES}
+        by_id = {k: v for k, v in by_id.items() if v.get("source") not in home_names}
     new_items = []
     for it in scraped:
         if not it.get("id") or not it.get("url") or not passes(it, CFG):
@@ -1002,7 +1014,14 @@ def main() -> int:
         if (src_name.get(it["id"].split("-")[0]), it.get("city", "lviv")) in ok_sources:
             it["active"] = False
     items = [it for it in by_id.values() if it.get("active") or it.get("last_seen", TODAY) >= cutoff or it.get("source") == "Вручну"]
-    analyze(items, CFG)
+    # дублікати шукаємо й серед оголошень з інших файлів даних (домашній ПК ↔ GitHub)
+    others = []
+    for f in CFG.get("data_files", []):
+        p = ROOT / f
+        if p.resolve() != DATA_PATH.resolve() and p.exists():
+            own = {it["id"] for it in items}
+            others += [it for it in json.loads(p.read_text(encoding="utf-8")).get("items", []) if it["id"] not in own]
+    analyze(items + others, CFG)
     items.sort(key=lambda x: (-x.get("score", 0), x.get("price_usd") or 0))
 
     DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
