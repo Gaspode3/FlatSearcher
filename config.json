@@ -85,7 +85,9 @@
       "https://dom.ria.com/uk/prodazha-kvartir/{slug}-4k/",
       "https://dom.ria.com/uk/prodazha-kvartir/{slug}-2k/",
       "https://dom.ria.com/uk/prodazha-kvartir/{slug}-1k/"
-    ]
+    ],
+    "api_pages": 2,
+    "api_requests_per_run": 25
   },
   "rieltor": {
     "rooms": [

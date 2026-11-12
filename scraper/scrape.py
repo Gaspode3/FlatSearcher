@@ -492,7 +492,61 @@ def scrape_domria(cfg: dict, rate: float, city: dict) -> list[dict]:
                 break
             time.sleep(1.5)
     out = list(items.values())
+    key = os.environ.get("DOMRIA_API_KEY", "").strip()
+    if not out and key:
+        log("  DOM.RIA: сторінки не віддали оголошень — беру офіційне API")
+        return scrape_domria_api(cfg, rate, city, key)
     enrich(out, cfg, "DOM.RIA", ria_detail, cfg["domria"].get("enrich_per_run", 50))
+    return out
+
+
+def scrape_domria_api(cfg: dict, rate: float, city: dict, key: str) -> list[dict]:
+    """Запасний шлях через developers.ria.com. Ощадливо щодо ліміту (1000 запитів/міс.):
+    кілька пошукових запитів і деталі лише для оголошень, яких ще немає в базі."""
+    rc = city.get("domria") or {}
+    if not rc.get("state_id") or not rc.get("city_id"):
+        log(f"  ! DOM.RIA API: для {city['name']} не вказано state_id/city_id")
+        return []
+    ids: list[int] = []
+    used = 0
+    for page in range(cfg["domria"].get("api_pages", 2)):
+        data = get("https://developers.ria.com/dom/search", as_json=True, tries=1, params={
+            "api_key": key, "category": 1, "realty_type": 2, "operation_type": 1,
+            "state_id": rc["state_id"], "city_id": rc["city_id"], "page": page, "sort": "created_at"})
+        used += 1
+        if not data or not data.get("items"):
+            break
+        ids.extend(data["items"])
+    out, skipped = [], 0
+    for rid in dict.fromkeys(ids):
+        if f"ria-{rid}" in KNOWN:
+            out.append(dict(KNOWN[f"ria-{rid}"]))
+            continue
+        if used >= cfg["domria"].get("api_requests_per_run", 25):
+            skipped += 1
+            continue
+        info = get(f"https://developers.ria.com/dom/info/{rid}", params={"api_key": key, "lang_id": 4}, as_json=True, tries=1)
+        used += 1
+        if not info:
+            continue
+        price = num((info.get("priceArr") or {}).get("1"))
+        url = info.get("beautiful_url") or ""
+        url = url if url.startswith("http") else "https://dom.ria.com/uk/" + url.lstrip("/")
+        street = " ".join(str(x) for x in (info.get("street_name_uk") or info.get("street_name"), info.get("building_number_str")) if x)
+        out.append(base_item(
+            "DOM.RIA", f"ria-{rid}", city, url=url, title=street or "Квартира",
+            price_usd=round(price) if price else None,
+            rooms=info.get("rooms_count"), area=num(info.get("total_square_meters")),
+            floor=info.get("floor"), floors=info.get("floors_count"),
+            year_built=int(num(info.get("year_of_construction")) or 0) or None,
+            district=info.get("district_name_uk") or info.get("district_name"),
+            address=f"{street}, {city['name']}" if street else None,
+            description=clean(info.get("description_uk") or info.get("description")),
+            published=(info.get("publishing_date") or "")[:10] or None,
+            lat=num(info.get("latitude")), lon=num(info.get("longitude")),
+        ))
+        time.sleep(0.4)
+    log(f"  DOM.RIA API: запитів {used}" + (f", відкладено {skipped}" if skipped else ""))
     return out
 
 
