@@ -136,8 +136,9 @@
   "notify_min_area_2rooms": 60,
   "newbuilds": {
     "catalog_pages": 30,
-    "pages_per_run": 60,
-    "recheck_days": 3,
-    "min_area_for_prefilter": 45
+    "complexes_per_run": 40,
+    "recheck_days": 5,
+    "min_area_for_prefilter": 45,
+    "plans_per_rooms": 12
   }
 }

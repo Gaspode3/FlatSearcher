@@ -339,12 +339,14 @@
     const node = $("card-tpl").content.firstElementChild.cloneNode(true);
     if (cx.id === focusId) node.classList.add("focus");
     const strip = node.querySelector(".strip");
-    if (cx.photo) {
-      const img = el("img"); img.src = cx.photo; img.alt = cx.name; img.loading = "lazy";
+    const pics = (cx.photos && cx.photos.length ? cx.photos : [cx.photo]).filter(Boolean);
+    pics.forEach((src, i) => {
+      if (i === 1 && cx.lat != null) strip.append(mapSlide({ ...cx, geo_approx: false }));
+      const img = el("img"); img.src = src; img.alt = `${cx.name} — фото ${i + 1}`; img.loading = i ? "lazy" : "eager";
       img.onerror = () => img.remove();
       strip.append(img);
-    }
-    if (cx.lat != null) strip.append(mapSlide({ ...cx, geo_approx: false }));
+    });
+    if (pics.length <= 1 && cx.lat != null) strip.append(mapSlide({ ...cx, geo_approx: false }));
     if (!strip.children.length) strip.append(el("span", "noimg", "🏗"));
     const pc = node.querySelector(".pcount");
     if (strip.children.length > 1) {
@@ -383,6 +385,43 @@
     } else {
       const d = el("div"); d.append(el("dt", null, "Ціни за кімнатністю"), el("dd", null, "на сторінці ЖК")); dl.append(d);
     }
+    const facts = el("dl", "details");
+    const addRow = (k, v) => { const d = el("div"); d.append(el("dt", null, k), v instanceof Node ? v : el("dd", null, String(v))); facts.append(d); };
+    if (cx.street || cx.lat != null) {
+      const dd = el("dd");
+      if (cx.street) dd.append(cx.street + " ");
+      if (cx.lat != null) { const a = el("a", "maplink", "📍 На карті"); a.href = mapsLink(cx); a.target = "_blank"; a.rel = "noopener"; dd.append(a); }
+      addRow("Локація", dd);
+    }
+    if (cityName(cx.city)) addRow("Місто", cityName(cx.city));
+    const fl = cx.floors_max || cx.floors_max_cat;
+    if (fl) addRow("Поверховість", `${cx.floors_min_cat && cx.floors_min_cat !== fl ? cx.floors_min_cat + "–" : "до "}${fl} пов.`);
+    if (cx.release) addRow("Здача", cx.release);
+    if (cx.area_min) addRow("Площі", `${cx.area_min}–${cx.area_max} м²`);
+    node.querySelector(".title").parentElement.querySelector(".cx-sub").after(facts);
+
+    if (cx.plans && cx.plans.length) {
+      const det = el("details", "plans");
+      det.open = cx.id === focusId;
+      det.append(el("summary", null, `📐 Планування (${cx.plans.length}${Object.values(cx.rooms || {}).reduce((a, x) => a + x.plans, 0) > cx.plans.length ? " з " + Object.values(cx.rooms || {}).reduce((a, x) => a + x.plans, 0) : ""})`));
+      const grid = el("div", "plan-grid");
+      const maxP = data.criteria?.max_price_usd || Infinity;
+      for (const p of cx.plans) {
+        const a = el("a", "plan" + (p.price_usd > maxP ? " over" : ""));
+        a.href = p.photo || cx.url; a.target = "_blank"; a.rel = "noopener";
+        if (p.photo) { const im = el("img"); im.src = p.photo; im.loading = "lazy"; im.alt = `План ${p.name || ""}`; im.onerror = () => { im.style.visibility = "hidden"; }; a.append(im); }
+        a.append(el("strong", null, `$${fmt(p.price_usd)}`));
+        a.append(el("span", null, `${p.rooms} кімн. · ${p.area} м²`));
+        a.append(el("span", null, `пов. ${p.floors || "?"}${p.building_floors ? " з " + p.building_floors : ""}${p.release ? " · " + p.release : ""}`));
+        grid.append(a);
+      }
+      det.append(grid);
+      const all = el("a", "maplink", "Усі планування на DOM.RIA →");
+      all.href = cx.url.replace(/\/?$/, "/") + "planirovki/"; all.target = "_blank"; all.rel = "noopener";
+      det.append(all);
+      node.querySelector(".badges").after(det);
+    }
+
     const badges = node.querySelector(".badges");
     const [st, cls] = STATUS[cx.status] || ["", ""];
     if (st) badges.append(el("span", "badge " + cls, st + (cx.status !== "ready" && cx.release ? ` · здача ${cx.release}` : "")));

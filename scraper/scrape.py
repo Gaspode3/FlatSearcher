@@ -628,6 +628,54 @@ def ria_init(html: str) -> dict | None:
         return None
 
 
+def complex_details(url: str, nid: int, cfg: dict):
+    """Сторінка ЖК (фото) і сторінки планувань по кімнатності: плани з зображеннями, поверхами й цінами."""
+    photos, floors_max = [], None
+    d = ria_init(get(url) or "") or {}
+    for p in sorted((d.get("newbuildPhotos") or {}).values(), key=lambda x: x.get("priority") or 99):
+        if p.get("newbuildId") == nid and p.get("type") in ("new-gallery", "new-master-plan") and p.get("img_620x460"):
+            photos.append(p["img_620x460"])
+    time.sleep(1)
+    plans, by = [], {}
+    for r in range(cfg["rooms_min"], 5):
+        html = get(url.rstrip("/") + f"/planirovki/{r}k/")
+        d = ria_init(html or "") or {}
+        secs = d.get("sections") or {}
+        for p in (d.get("plans") or {}).values():
+            if p.get("newbuildId") != nid or p.get("sold") or not p.get("fullAreaPriceUsd") or (p.get("roomCount") or 0) < r:
+                continue
+            if r < 4 and p.get("roomCount") != r:
+                continue
+            sec = secs.get(str(p.get("sectionId"))) or {}
+            if sec.get("floors"):
+                floors_max = max(floors_max or 0, int(sec["floors"]))
+            rel = sec.get("release") or {}
+            plans.append({
+                "id": p.get("planId"), "rooms": p.get("roomCount"), "area": p.get("areaMin"),
+                "price_usd": round(p["fullAreaPriceUsd"]), "m2_usd": round(p.get("areaPriceUsd") or 0),
+                "floors": p.get("floorsList"), "building_floors": sec.get("floors"),
+                "photo": p.get("photo"), "name": p.get("planIdDev"), "count": p.get("flatsCount"),
+                "release": f"{rel.get('quarter')} кв. {rel.get('year')}" if rel.get("year") else None,
+                "section": sec.get("sectionNumber"),
+            })
+        time.sleep(1)
+    for p in plans:
+        k = str(min(p["rooms"], 4))
+        b = by.setdefault(k, {"from_usd": 10**12, "area_min": 10**9, "area_max": 0, "plans": 0})
+        b["from_usd"] = min(b["from_usd"], p["price_usd"])
+        b["area_min"] = min(b["area_min"], p["area"] or 10**9)
+        b["area_max"] = max(b["area_max"], p["area"] or 0)
+        b["plans"] += 1
+    plans.sort(key=lambda p: (p["rooms"], p["price_usd"]))
+    keep = cfg.get("newbuilds", {}).get("plans_per_rooms", 12)
+    trimmed, cnt = [], {}
+    for p in plans:
+        cnt[p["rooms"]] = cnt.get(p["rooms"], 0) + 1
+        if cnt[p["rooms"]] <= keep:
+            trimmed.append(p)
+    return dict(sorted(by.items())), trimmed, photos[:15], floors_max, TODAY
+
+
 def scrape_complexes(cfg: dict, rate: float, city: dict, known: dict) -> list[dict]:
     """Житлові комплекси з квартирами в продажу: ціни «від» за кімнатністю, стан будівництва, розтермінування."""
     rc = city.get("domria") or {}
@@ -666,27 +714,16 @@ def scrape_complexes(cfg: dict, rate: float, city: dict, known: dict) -> list[di
         nid = nb["_nid"]
         cid = f"zk-{nid}"
         old = known.get(cid)
-        rooms, checked = None, None
-        if old and old.get("rooms_checked") and (dt.date.today() - dt.date.fromisoformat(old["rooms_checked"])).days < nc.get("recheck_days", 3):
+        rooms, checked, plans, photos, floors_max = None, None, [], [], None
+        if old and old.get("rooms_checked") and "plans" in old and (dt.date.today() - dt.date.fromisoformat(old["rooms_checked"])).days < nc.get("recheck_days", 3):
             rooms, checked = old.get("rooms"), old["rooms_checked"]
-        elif opened < nc.get("pages_per_run", 60) and urls.get(nid):
-            html = get(urls[nid])
+            plans, photos, floors_max = old.get("plans") or [], old.get("photos") or [], old.get("floors_max")
+        elif opened < nc.get("complexes_per_run", 40) and urls.get(nid):
             opened += 1
-            d = ria_init(html or "") or {}
-            by: dict[int, dict] = {}
-            for p in (d.get("plans") or {}).values():
-                if p.get("newbuildId") != nid or p.get("sold") or not p.get("fullAreaPriceUsd"):
-                    continue
-                r = min(int(p.get("roomCount") or 0), 4)
-                if r < cfg["rooms_min"]:
-                    continue
-                b = by.setdefault(r, {"from_usd": 1e12, "area_min": 1e9, "area_max": 0, "plans": 0})
-                b["from_usd"] = min(b["from_usd"], round(p["fullAreaPriceUsd"]))
-                b["area_min"] = min(b["area_min"], p.get("areaMin") or 1e9)
-                b["area_max"] = max(b["area_max"], p.get("areaMin") or 0)
-                b["plans"] += 1
-            rooms, checked = {str(k): v for k, v in sorted(by.items())}, TODAY
-            time.sleep(1)
+            rooms, plans, photos, floors_max, checked = complex_details(urls[nid], nid, cfg)
+        if rooms is None and old:
+            rooms, checked = old.get("rooms"), old.get("rooms_checked")
+            plans, photos, floors_max = old.get("plans") or [], old.get("photos") or [], old.get("floors_max")
         rel = nb.get("release") or {}
         ready, notready = nb.get("readySectionsCount") or 0, nb.get("notReadySectionsCount") or 0
         status = "ready" if ready and not notready else "partly" if ready else "building"
@@ -697,6 +734,7 @@ def scrape_complexes(cfg: dict, rate: float, city: dict, known: dict) -> list[di
             "street": nb.get("streetName") or nb.get("street"),
             "url": urls.get(nid) or f"https://dom.ria.com/uk/novostroyki/{rc['slug']}/",
             "photo": (nb.get("img_620x460") or nb.get("img") or "").replace("-276x183", "-620x460"),
+            "floors_min_cat": nb.get("floorMin"), "floors_max_cat": nb.get("floorMax"),
             "lat": nb.get("latitude"), "lon": nb.get("longitude"),
             "price_m2_usd": nb.get("priceUSD"), "area_min": nb.get("areaMin"), "area_max": nb.get("areaMax"),
             "available": nb.get("availableFlatsCount"),
@@ -709,6 +747,7 @@ def scrape_complexes(cfg: dict, rate: float, city: dict, known: dict) -> list[di
             "verified": bool(nb.get("inspected")),
             "promo": nb.get("promoShort"), "promo_text": promo,
             "rooms": rooms, "rooms_checked": checked,
+            "plans": plans, "photos": photos, "floors_max": floors_max,
             "first_seen": (old or {}).get("first_seen", TODAY), "last_seen": TODAY,
         })
     log(f"  Новобудови: відкрито сторінок ЖК {opened}")
