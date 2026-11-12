@@ -1,0 +1,6 @@
+1 200 717301 https://dom.ria.com/uk/arenda-kvartir/lvov/
+2 200 692002 https://dom.ria.com/uk/arenda-kvartir/lvov-2k/
+3 200 1140695 https://rieltor.ua/lvov/flats-rent/?rooms=2
+4 200 869170 https://www.olx.ua/api/v1/offers/?offset=0&limit=50&category_id=1760&city_id=176&region_id=5&sort_by=created_at:desc
+5 200 300768 https://mistechko.com/lvov/orenda-kvartir/
+6 404 19723 https://svitkvartyr.com/orenda-kvartyr/lviv
