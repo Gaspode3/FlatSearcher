@@ -477,7 +477,7 @@ def scrape_domria_html(cfg: dict, rate: float) -> list[dict]:
                 rooms = num((re.search(r"(\d)\s*кімнат", text) or [None, None])[1])
                 area = num((re.search(r"(\d+[.,]?\d*)\s*м²", text) or [None, None])[1])
                 fl = re.search(r"(\d+)\s*поверх\s*з\s*(\d+)", text)
-                imgs = [i.get("src") for i in card.find_all("img") if (i.get("src") or "").startswith("http")]
+                imgs = ria_photos_from_html(str(card))
                 items[rid] = {
                     "id": rid,
                     "source": "DOM.RIA",
@@ -502,7 +502,56 @@ def scrape_domria_html(cfg: dict, rate: float) -> list[dict]:
     return list(items.values())
 
 
+RIA_PHOTO_RE = re.compile(r"realty__(\d+)|(photos/dom/photo/\d+/\d+/(\d+)/\3)")
+
+
+def ria_photos_from_html(html: str) -> list[str]:
+    """Усі фото оголошення DOM.RIA за їхніми номерами, у великому розмірі."""
+    seen, out = set(), []
+    for m in RIA_PHOTO_RE.finditer(html):
+        pid = m.group(1) or m.group(3)
+        if not pid or pid in seen:
+            continue
+        seen.add(pid)
+        if m.group(1):
+            out.append(f"https://cdn.riastatic.com/photosnewr/dom/photo/realty__{pid}-1850x1040x90.webp")
+        else:
+            out.append(f"https://cdn.riastatic.com/{m.group(2)}xl.webp")
+    return out[:20]
+
+
+def ria_enrich(items: list[dict], cfg: dict) -> None:
+    """Для нових підхожих оголошень відкриває сторінку оголошення: всі фото й повний опис."""
+    n = 0
+    for it in items:
+        if not passes(it, cfg) or len(it.get("photos") or []) >= 4 or it["id"] in KNOWN and len(KNOWN[it["id"]].get("photos") or []) >= 4:
+            continue
+        if n >= cfg["domria"].get("enrich_per_run", 40):
+            break
+        html = get(it["url"])
+        n += 1
+        if not html:
+            continue
+        photos = ria_photos_from_html(html)
+        if len(photos) > len(it.get("photos") or []):
+            it["photos"] = photos
+        soup = BeautifulSoup(html, "html.parser")
+        desc = soup.select_one("#descriptionBlock, [class*=description] .boxed, .descriptions-ticket")
+        if desc:
+            text = desc.get_text(" ", strip=True)
+            if len(text) > len(it.get("description") or ""):
+                it["description"] = text[:2000]
+        time.sleep(1)
+    log(f"  DOM.RIA: відкрито сторінок оголошень {n}")
+
+
 def scrape_domria(cfg: dict, rate: float) -> list[dict]:
+    items = _scrape_domria(cfg, rate)
+    ria_enrich(items, cfg)
+    return items
+
+
+def _scrape_domria(cfg: dict, rate: float) -> list[dict]:
     key = os.environ.get("DOMRIA_API_KEY", "").strip()
     if key:
         try:
