@@ -24,6 +24,7 @@ if ((Test-Path $Log) -and ((Get-Item $Log).Length -gt 1MB)) {
 
 Write-Log "Старт. Оновлюю дані з GitHub…"
 git pull --rebase --autostash -q 2>&1 | ForEach-Object { Write-Log "git: $_" }
+Remove-Item Env:GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue   # для відправки вхід у GitHub дозволено
 Write-Log "Збираю OLX і rieltor.ua — це 5–10 хвилин, прогрес нижче"
 
 $py = if (Get-Command py -ErrorAction SilentlyContinue) { "py" } else { "python" }
