@@ -12,7 +12,9 @@
   "keep_inactive_days": 14,
   "geocode_per_run": 60,
   "default_sources": [
+    "olx",
     "domria",
+    "rieltor",
     "mistechko",
     "svitkvartyr"
   ],
@@ -66,7 +68,7 @@
     }
   ],
   "olx": {
-    "pages": 10,
+    "pages": 15,
     "mobile_pages": 6,
     "mobile_room_filters": [
       [
@@ -97,7 +99,8 @@
       4
     ],
     "pages": 3,
-    "enrich_per_run": 40
+    "enrich_per_run": 40,
+    "detail_pause": 5
   },
   "mistechko": {
     "pages": 3,
@@ -124,5 +127,6 @@
     "docs/data/listings.json",
     "docs/data/listings-home.json"
   ],
-  "_sources_comment": "default_sources збирає GitHub щоранку; home_sources — домашній комп'ютер (OLX і rieltor.ua блокують сервери GitHub). Див. windows/."
+  "_sources_comment": "Усі джерела збирає GitHub (OLX і rieltor — через curl). Домашній збір (windows/) — запасний варіант: home_enabled: true.",
+  "home_enabled": false
 }

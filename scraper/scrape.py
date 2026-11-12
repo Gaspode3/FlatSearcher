@@ -73,7 +73,7 @@ def get_curl(url: str, params: dict | None, as_json: bool, tries: int):
                 return None
             if code == 429 or code >= 500 or code == 0:
                 log(f"  ! {full}: HTTP {code} (curl, спроба {attempt})")
-                time.sleep(5 * attempt)
+                time.sleep((30 if code == 429 else 5) * attempt)
                 continue
             if DEBUG:
                 DEBUG_DIR.mkdir(exist_ok=True)
@@ -670,7 +670,7 @@ def scrape_rieltor(cfg: dict, rate: float, city: dict) -> list[dict]:
                 break
             time.sleep(1.5)
     out = list(items.values())
-    enrich(out, cfg, "rieltor.ua", rieltor_detail, cfg["rieltor"].get("enrich_per_run", 40))
+    enrich(out, cfg, "rieltor.ua", rieltor_detail, cfg["rieltor"].get("enrich_per_run", 40), cfg["rieltor"].get("detail_pause", 5))
     return out
 
 
@@ -850,7 +850,7 @@ def scrape_svitkvartyr(cfg: dict, rate: float, city: dict) -> list[dict]:
 
 # ================================================================ спільне: сторінка оголошення, геокодування
 
-def enrich(items: list[dict], cfg: dict, name: str, fn: Callable[[dict, str], None], limit: int) -> None:
+def enrich(items: list[dict], cfg: dict, name: str, fn: Callable[[dict, str], None], limit: int, pause: float = 1.0) -> None:
     """Для нових підхожих оголошень відкриває сторінку оголошення: всі фото, опис, координати."""
     n = 0
     for it in items:
@@ -868,7 +868,7 @@ def enrich(items: list[dict], cfg: dict, name: str, fn: Callable[[dict, str], No
                 fn(it, html)
             except Exception as e:  # noqa: BLE001
                 log(f"  ! {name}: не вдалося розібрати {it['url']}: {e}")
-        time.sleep(1)
+        time.sleep(pause)
     log(f"  {name}: відкрито сторінок оголошень {n}")
 
 
@@ -1022,6 +1022,9 @@ def main() -> int:
     args = ap.parse_args()
     DEBUG = args.debug
     global GEOCACHE_PATH
+    if args.home and not json.loads(CONFIG_PATH.read_text(encoding="utf-8")).get("home_enabled", True):
+        log("Домашній збір вимкнено (home_enabled: false у config.json) — усе збирає GitHub. Нічого не роблю.")
+        return 0
     if args.home:
         args.out, args.new, args.geocache = "docs/data/listings-home.json", "notify/home-new.md", "docs/data/geocache-home.json"
     DATA_PATH = ROOT / args.out
