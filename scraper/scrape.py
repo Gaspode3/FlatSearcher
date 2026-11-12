@@ -477,7 +477,7 @@ def scrape_domria_html(cfg: dict, rate: float) -> list[dict]:
                 rooms = num((re.search(r"(\d)\s*кімнат", text) or [None, None])[1])
                 area = num((re.search(r"(\d+[.,]?\d*)\s*м²", text) or [None, None])[1])
                 fl = re.search(r"(\d+)\s*поверх\s*з\s*(\d+)", text)
-                imgs = ria_photos_from_html(str(card))
+                imgs = ria_photos_from_html(str(card), ria_slug(m.group(0)))
                 items[rid] = {
                     "id": rid,
                     "source": "DOM.RIA",
@@ -503,11 +503,20 @@ def scrape_domria_html(cfg: dict, rate: float) -> list[dict]:
 
 
 RIA_PHOTO_RE = re.compile(r"realty__(\d+)|(photos/dom/photo/\d+/\d+/(\d+)/\3)")
+RIA_PHOTO_NEW_RE = re.compile(r"photos?(?:new)?/dom/photo/([a-z0-9-]+)__(\d+)(?:f|fl|xl|m|s|b)?\.(?:jpg|jpeg|webp)")
 
 
-def ria_photos_from_html(html: str) -> list[str]:
-    """Усі фото оголошення DOM.RIA за їхніми номерами, у великому розмірі."""
+def ria_photos_from_html(html: str, slug: str | None = None) -> list[str]:
+    """Усі фото оголошення DOM.RIA у великому розмірі.
+    slug — частина адреси оголошення (prodaja-kvartira-lvov-...-ulitsa), щоб не брати фото
+    схожих квартир, які DOM.RIA показує на тій самій сторінці."""
     seen, out = set(), []
+    for m in RIA_PHOTO_NEW_RE.finditer(html):
+        s, pid = m.group(1), m.group(2)
+        if slug and s != slug or pid in seen:
+            continue
+        seen.add(pid)
+        out.append(f"https://cdn.riastatic.com/photosnew/dom/photo/{s}__{pid}xl.jpg")
     for m in RIA_PHOTO_RE.finditer(html):
         pid = m.group(1) or m.group(3)
         if not pid or pid in seen:
@@ -518,6 +527,11 @@ def ria_photos_from_html(html: str) -> list[str]:
         else:
             out.append(f"https://cdn.riastatic.com/{m.group(2)}xl.webp")
     return out[:20]
+
+
+def ria_slug(url: str) -> str | None:
+    m = re.search(r"/realty-(prodaja-kvartira-[a-z0-9-]+?)-\d+\.html", url or "")
+    return m.group(1) if m else None
 
 
 def ria_enrich(items: list[dict], cfg: dict) -> None:
@@ -532,7 +546,7 @@ def ria_enrich(items: list[dict], cfg: dict) -> None:
         n += 1
         if not html:
             continue
-        photos = ria_photos_from_html(html)
+        photos = ria_photos_from_html(html, ria_slug(it["url"]))
         if not photos and n <= 2:
             sample = sorted(set(re.findall(r"https?:\\?/\\?/[^\"'\s]*riastatic[^\"'\s]{0,120}", html)))[:8]
             log(f"  [діагностика фото] {it['url']}: знайдено {len(sample)}: " + " | ".join(sample))
