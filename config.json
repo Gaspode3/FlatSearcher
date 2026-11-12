@@ -7,7 +7,6 @@
   "min_area_m2": 0,
   "spacious_area_m2": 60,
   "keep_inactive_days": 14,
-
   "olx": {
     "enabled": true,
     "pages": 5,
@@ -15,13 +14,14 @@
       "https://www.olx.ua/uk/nedvizhimost/kvartiry/prodazha-kvartir/lvov/?search%5Bfilter_enum_number_of_rooms_string%5D%5B0%5D=trehkomnatnye&search%5Bfilter_enum_number_of_rooms_string%5D%5B1%5D=chetyrehkomnatnye&search%5Border%5D=created_at%3Adesc"
     ]
   },
-
   "domria": {
     "enabled": true,
-    "_comment": "Офіційне API: ключ безкоштовно на https://developers.ria.com, додайте його в GitHub Secrets як DOMRIA_API_KEY. Без ключа збирач спробує розібрати HTML-сторінки.",
+    "_comment": "Офіційне API: ключ на https://developers.ria.com (оберіть варіант з додатковими питаннями — 1000 запитів/міс.), додайте в GitHub Secrets як DOMRIA_API_KEY. Збирач робить 1 пошуковий запит на день і запитує деталі лише нових оголошень (не більше api_info_per_run за запуск) — це ≈ 300–800 запитів на місяць. Без ключа розбирає HTML-сторінки.",
     "state_id": 5,
     "city_id": 5,
-    "pages": 5,
+    "api_pages": 1,
+    "api_info_per_run": 25,
+    "html_pages": 3,
     "html_urls": [
       "https://dom.ria.com/uk/prodazha-kvartir/lvov-bez-rieltora/",
       "https://dom.ria.com/uk/prodazha-kvartir/lvov/"

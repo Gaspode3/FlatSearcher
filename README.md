@@ -17,7 +17,8 @@
 2. **Увімкніть сайт:** Settings → Pages → Source: *Deploy from a branch*, Branch: `main`, папка `/docs` → Save.
    За хвилину сайт буде на `https://<ваш-логін>.github.io/kvartyra-lviv/`.
 3. **Дозвольте Actions записувати дані:** Settings → Actions → General → Workflow permissions → *Read and write permissions* → Save.
-4. **(Рекомендовано) Ключ DOM.RIA API:** зареєструйтесь на <https://developers.ria.com>, отримайте безкоштовний ключ і додайте його: Settings → Secrets and variables → Actions → New repository secret, назва `DOMRIA_API_KEY`. Без ключа збирач розбирає HTML-сторінки DOM.RIA — це працює, але менш надійно.
+4. **(Рекомендовано) Ключ DOM.RIA API:** зареєструйтесь на <https://developers.ria.com> **з відповідями на додаткові питання** (так дають 1000 запитів на місяць замість 100), отримайте ключ і додайте його: Settings → Secrets and variables → Actions → New repository secret, назва `DOMRIA_API_KEY`.
+   Збирач витрачає ліміт ощадливо: 1 пошуковий запит на день і запит деталей лише для нових оголошень, не більше 25 за запуск (`api_info_per_run` у `config.json`). Разом це до ~800 запитів на місяць. Без ключа збирач розбирає HTML-сторінки DOM.RIA — це працює, але менш надійно.
 5. **Перший запуск:** вкладка Actions → «Пошук квартир» → *Run workflow*. Далі він запускатиметься сам щодня о 07:17.
 
 ## Сповіщення

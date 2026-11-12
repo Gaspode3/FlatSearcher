@@ -402,28 +402,41 @@ def _ria_phones(info: dict) -> list[str]:
 
 
 def scrape_domria_api(cfg: dict, rate: float, key: str) -> list[dict]:
+    """Ощадливо щодо ліміту API (1000 запитів/міс.): 1 пошуковий запит на день
+    і запит деталей лише для оголошень, яких ще немає в базі."""
     rc = cfg["domria"]
     ids: list[int] = []
-    for page in range(rc["pages"]):
+    used = 0
+    for page in range(rc.get("api_pages", 1)):
         params = {
             "api_key": key, "category": 1, "realty_type": 2, "operation_type": 1,
             "state_id": rc["state_id"], "city_id": rc["city_id"], "page": page,
             "characteristic[209][from]": cfg["rooms_min"], "characteristic[209][to]": cfg["rooms_max"],
             "sort": "created_at",
         }
-        data = get("https://developers.ria.com/dom/search", params=params, as_json=True)
+        data = get("https://developers.ria.com/dom/search", params=params, as_json=True, tries=1)
+        used += 1
         if not data or not data.get("items"):
             break
         ids.extend(data["items"])
         log(f"  DOM.RIA API стор. {page}: {len(data['items'])}")
-        if len(data["items"]) < 10:
-            break
     items = []
+    limit = rc.get("api_info_per_run", 25)
+    skipped = 0
     for rid in dict.fromkeys(ids):
-        info = get(f"https://developers.ria.com/dom/info/{rid}", params={"api_key": key, "lang_id": 4}, as_json=True)
+        known = KNOWN.get(f"ria-{rid}")
+        if known:
+            items.append(dict(known))
+            continue
+        if used >= limit:
+            skipped += 1
+            continue
+        info = get(f"https://developers.ria.com/dom/info/{rid}", params={"api_key": key, "lang_id": 4}, as_json=True, tries=1)
+        used += 1
         if info:
             items.append(_ria_item_from_info(info, rate))
         time.sleep(0.4)
+    log(f"  DOM.RIA API: використано запитів {used}" + (f", відкладено {skipped} нових до наступного запуску" if skipped else ""))
     return items
 
 
@@ -433,7 +446,7 @@ RIA_LINK_RE = re.compile(r"/uk/realty-prodaja-kvartira-[\w-]+-(\d+)\.html")
 def scrape_domria_html(cfg: dict, rate: float) -> list[dict]:
     items: dict[str, dict] = {}
     for base in cfg["domria"]["html_urls"]:
-        for page in range(1, cfg["domria"]["pages"] + 1):
+        for page in range(1, cfg["domria"].get("html_pages", 3) + 1):
             html = get(base, params={"page": page} if page > 1 else None)
             if not html:
                 break
@@ -511,6 +524,8 @@ def main() -> int:
     DEBUG = args.debug
     CFG = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
 
+    global KNOWN
+    KNOWN = {it["id"]: it for it in load_existing().get("items", [])}
     rate = usd_rate()
     log(f"Курс USD: {rate:.2f}")
 
@@ -559,10 +574,16 @@ def main() -> int:
         by_id[it["id"]] = it
 
     cutoff = (dt.date.today() - dt.timedelta(days=CFG["keep_inactive_days"])).isoformat()
+    # API DOM.RIA щодня бачить лише першу сторінку свіжих оголошень, тож старіші
+    # оголошення звідти вважаємо активними ще 30 днів після останньої появи.
+    ria_cutoff = (dt.date.today() - dt.timedelta(days=30)).isoformat()
     for it in by_id.values():
-        if it.get("last_seen", TODAY) < TODAY and it.get("source") != "Вручну":
-            it["active"] = False
-    items = [it for it in by_id.values() if it.get("last_seen", TODAY) >= cutoff or it.get("source") == "Вручну"]
+        if it.get("source") == "Вручну" or it.get("last_seen", TODAY) >= TODAY:
+            continue
+        if it["id"].startswith("ria-") and os.environ.get("DOMRIA_API_KEY") and it.get("last_seen", TODAY) >= ria_cutoff:
+            continue
+        it["active"] = False
+    items = [it for it in by_id.values() if it.get("active") or it.get("last_seen", TODAY) >= cutoff or it.get("source") == "Вручну"]
     items.sort(key=lambda x: (-x.get("score", 0), x.get("price_usd") or 0))
 
     DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -593,6 +614,7 @@ def main() -> int:
 
 
 CFG: dict = {}
+KNOWN: dict = {}
 
 if __name__ == "__main__":
     sys.exit(main())
