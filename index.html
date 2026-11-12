@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Квартира у Львові</title>
+  <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Квартира у Львові</h1>
+    <p class="meta" id="meta">Завантаження…</p>
+  </header>
+
+  <nav class="tabs" id="tabs" aria-label="Розділи">
+    <button data-tab="unseen" class="active">Не переглянуті <span></span></button>
+    <button data-tab="all">Усі <span></span></button>
+    <button data-tab="picked">Відібрані <span></span></button>
+    <button data-tab="rejected">Відхилені <span></span></button>
+  </nav>
+
+  <section class="filters" aria-label="Фільтри">
+    <div class="row fields">
+      <label>Кімнат
+        <select id="f-rooms">
+          <option value="">3–4</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+        </select>
+      </label>
+      <label>До, $
+        <input id="f-price" type="number" step="1000" inputmode="numeric">
+      </label>
+      <label>Від, м²
+        <input id="f-area" type="number" step="5" inputmode="numeric" placeholder="0">
+      </label>
+      <label>Сортування
+        <select id="f-sort">
+          <option value="score">Найкращі збіги</option>
+          <option value="new">Найновіші</option>
+          <option value="price">Дешевші</option>
+          <option value="ppm">Дешевший м²</option>
+          <option value="area">Більша площа</option>
+        </select>
+      </label>
+    </div>
+    <div class="row chips">
+      <label class="chip"><input type="checkbox" id="f-old"> 🏛 Старий фонд</label>
+      <label class="chip"><input type="checkbox" id="f-repair"> 🔨 Під ремонт</label>
+      <label class="chip"><input type="checkbox" id="f-owner"> 👤 Власник</label>
+      <label class="chip"><input type="checkbox" id="f-budget"> 💵 У бюджеті</label>
+      <label class="chip"><input type="checkbox" id="f-inactive"> Показати зниклі</label>
+    </div>
+  </section>
+
+  <p class="count" id="count"></p>
+  <main id="list" class="grid"></main>
+
+  <div class="sheet" id="share-sheet" hidden>
+    <div class="sheet-box" role="dialog" aria-label="Поділитись">
+      <p class="sheet-title">Поділитись</p>
+      <a id="sh-wa" target="_blank" rel="noopener">WhatsApp</a>
+      <a id="sh-tg" target="_blank" rel="noopener">Telegram</a>
+      <a id="sh-vb">Viber</a>
+      <button id="sh-copy">Скопіювати текст і посилання</button>
+      <button id="sh-close" class="ghost">Закрити</button>
+    </div>
+  </div>
+
+  <template id="card-tpl">
+    <article class="card">
+      <div class="gallery">
+        <div class="strip"></div>
+        <span class="pcount"></span>
+        <span class="src"></span>
+        <span class="newtag" hidden>Нове</span>
+      </div>
+      <div class="body">
+        <div class="price"><strong></strong><span class="ppm"></span></div>
+        <h2 class="title"></h2>
+        <dl class="details"></dl>
+        <div class="badges"></div>
+        <div class="descwrap">
+          <p class="desc"></p>
+          <button class="more" hidden>Показати повністю</button>
+        </div>
+        <div class="contact"></div>
+        <div class="actions">
+          <a class="btn open" target="_blank" rel="noopener">Відкрити</a>
+          <button class="btn share">Поділитись</button>
+          <button class="btn seen" title="Позначити переглянутим">✓</button>
+        </div>
+        <div class="mine">
+          <select class="status">
+            <option value="">Статус…</option>
+            <option>Цікаво</option>
+            <option>Подзвонити</option>
+            <option>Дивився</option>
+            <option>Відхилено</option>
+            <option>Продано</option>
+          </select>
+          <input class="note" placeholder="Нотатка">
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <div class="toast" id="toast" hidden></div>
+  <footer class="foot">Дані оновлюються автоматично раз на день. Переглянуті, статуси й нотатки зберігаються в цьому браузері.</footer>
+  <script src="app.js"></script>
+</body>
+</html>

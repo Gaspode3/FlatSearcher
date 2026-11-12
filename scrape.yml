@@ -1,0 +1,49 @@
+name: Пошук квартир
+
+on:
+  schedule:
+    - cron: "17 5 * * *"   # щодня о 07:17 за Києвом (зимовий час)
+  workflow_dispatch:        # кнопка «Run workflow» для ручного запуску
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Зібрати оголошення
+        env:
+          DOMRIA_API_KEY: ${{ secrets.DOMRIA_API_KEY }}
+        run: python scraper/scrape.py
+
+      - name: Зберегти дані
+        run: |
+          git config user.name "kvartyra-bot"
+          git config user.email "kvartyra-bot@users.noreply.github.com"
+          git add docs/data/listings.json
+          git diff --cached --quiet || git commit -m "Оновлення оголошень $(date -u +%F)"
+          git push
+
+      - name: Сповіщення про нові варіанти
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -s new_listings.md ]; then
+            gh issue create --title "🏠 Нові квартири $(date +%d.%m)" --body-file new_listings.md
+          fi

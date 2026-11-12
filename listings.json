@@ -1,0 +1,440 @@
+{
+ "updated": "2026-11-12T12:00+00:00",
+ "usd_rate": 46.0,
+ "criteria": {
+  "rooms_min": 3,
+  "rooms_max": 4,
+  "budget_usd": 85000,
+  "max_price_usd": 90000
+ },
+ "errors": [],
+ "items": [
+  {
+   "id": "manual-2",
+   "source": "Вручну",
+   "photos": [],
+   "address": "Львів",
+   "first_seen": "2026-11-12",
+   "last_seen": "2026-11-12",
+   "active": true,
+   "title": "пр. Свободи, 3-кімнатна",
+   "price_usd": 80000,
+   "rooms": 3,
+   "area": 42.5,
+   "district": "Центр (Галицький)",
+   "url": "https://www.olx.ua/uk/nedvizhimost/kvartiry/prodazha-kvartir/lvov/q-%D0%B0%D0%B2%D1%81%D1%82%D1%80%D1%96%D0%B9%D1%81%D1%8C%D0%BA%D0%B8%D0%B9-%D0%B1%D1%83%D0%B4%D0%B8%D0%BD%D0%BE%D0%BA/",
+   "description": "Знайдено в пошуку «австрійський будинок» на OLX. Лише 42,5 м² на 3 кімнати. Ціна ≈ 3,68 млн грн.",
+   "published": "2026-10-27",
+   "price_history": [
+    {
+     "date": "2026-11-12",
+     "usd": 80000
+    }
+   ],
+   "flags": {
+    "old_fund": true,
+    "needs_repair": false,
+    "fresh_renovation": false,
+    "owner": false,
+    "apartments": false,
+    "under_construction": false,
+    "spacious": false,
+    "over_budget": false
+   },
+   "score": 7.06,
+   "phones": [],
+   "seller": null
+  },
+  {
+   "id": "manual-4",
+   "source": "Вручну",
+   "photos": [
+    "https://market-images.lunstatic.net/lun-ua/360/480/images/offers/1878560674510367.jpg"
+   ],
+   "address": "Львів",
+   "first_seen": "2026-11-12",
+   "last_seen": "2026-11-12",
+   "active": true,
+   "title": "вул. Околична, 18",
+   "price_usd": 90000,
+   "rooms": 3,
+   "area": 62,
+   "floor": 2,
+   "floors": 9,
+   "building": "Цегла, 1990",
+   "district": "Вулька (Франківський)",
+   "url": "https://lun.ua/sale/lviv/okolichna-vulicya-18/ru",
+   "description": "Від власника, без комісій, під ремонт. Поруч парк Горіховий гай.",
+   "is_owner": true,
+   "published": "2026-11-09",
+   "price_history": [
+    {
+     "date": "2026-11-12",
+     "usd": 90000
+    }
+   ],
+   "flags": {
+    "old_fund": false,
+    "needs_repair": true,
+    "fresh_renovation": false,
+    "owner": true,
+    "apartments": false,
+    "under_construction": false,
+    "spacious": true,
+    "over_budget": true
+   },
+   "score": 6.55,
+   "phones": [],
+   "seller": "Власник"
+  },
+  {
+   "id": "manual-1",
+   "source": "Вручну",
+   "photos": [],
+   "address": "Львів",
+   "first_seen": "2026-11-12",
+   "last_seen": "2026-11-12",
+   "active": true,
+   "title": "пл. Данила Галицького, 4",
+   "price_usd": 87000,
+   "rooms": 3,
+   "area": 57.9,
+   "floor": 2,
+   "floors": 2,
+   "year_built": 1920,
+   "building": "Цегла, 1920",
+   "district": "Центр (Галицький)",
+   "url": "https://lun.ua/sale/lviv/flats-tsentr-trykimnatni/ru",
+   "description": "Старий фонд у центрі, будинок 1920 р. Без ремонту / житловий стан. 2 прохідні + 1 ізольована кімната, індивідуальне опалення. Торг. Продає агенція.",
+   "is_owner": false,
+   "published": "2026-11-12",
+   "price_history": [
+    {
+     "date": "2026-11-12",
+     "usd": 87000
+    }
+   ],
+   "flags": {
+    "old_fund": true,
+    "needs_repair": true,
+    "fresh_renovation": false,
+    "owner": false,
+    "apartments": false,
+    "under_construction": false,
+    "spacious": false,
+    "over_budget": true
+   },
+   "score": 6.45,
+   "phones": [
+    "+38 097 944 20 47"
+   ],
+   "seller": "АН Golden City (Сніжана)"
+  },
+  {
+   "id": "manual-8",
+   "source": "Вручну",
+   "photos": [],
+   "address": "Львів",
+   "first_seen": "2026-11-12",
+   "last_seen": "2026-11-12",
+   "active": true,
+   "title": "вул. Миколайчука, 3-кімнатна 72,5 м²",
+   "price_usd": 76000,
+   "rooms": 3,
+   "area": 72.5,
+   "district": "Шевченківський",
+   "url": "https://www.olx.ua/uk/nedvizhimost/kvartiry/prodazha-kvartir/lvov/",
+   "description": "Можливий продаж по держпрограмах. ⚠ Знайдено лише в пошуковому фрагменті — перевірити, чи актуальне. Ціна ≈ 3,50 млн грн.",
+   "published": "2026-11-12",
+   "price_history": [
+    {
+     "date": "2026-11-12",
+     "usd": 76000
+    }
+   ],
+   "flags": {
+    "old_fund": false,
+    "needs_repair": false,
+    "fresh_renovation": false,
+    "owner": false,
+    "apartments": false,
+    "under_construction": false,
+    "spacious": true,
+    "over_budget": false
+   },
+   "score": 5.81,
+   "phones": [],
+   "seller": null
+  },
+  {
+   "id": "manual-6",
+   "source": "Вручну",
+   "photos": [
+    "https://market-images.lunstatic.net/lun-ua/360/480/images/offers/1878947321546521.jpg"
+   ],
+   "address": "Львів",
+   "first_seen": "2026-11-12",
+   "last_seen": "2026-11-12",
+   "active": true,
+   "title": "вул. Пулюя, 1",
+   "price_usd": 82000,
+   "rooms": 3,
+   "area": 70,
+   "floor": 9,
+   "floors": 9,
+   "building": "Панель, 1976",
+   "district": "Наукова (Франківський)",
+   "url": "https://lun.ua/sale/lviv/ivana-puliuia-st-1",
+   "description": "З ремонтом, власне горище. В описі ціна $84 000 — уточнити.",
+   "published": "2026-11-12",
+   "price_history": [
+    {
+     "date": "2026-11-12",
+     "usd": 82000
+    }
+   ],
+   "flags": {
+    "old_fund": false,
+    "needs_repair": false,
+    "fresh_renovation": false,
+    "owner": false,
+    "apartments": false,
+    "under_construction": false,
+    "spacious": true,
+    "over_budget": false
+   },
+   "score": 5.75,
+   "phones": [],
+   "seller": null
+  },
+  {
+   "id": "manual-3",
+   "source": "Вручну",
+   "photos": [],
+   "address": "Львів",
+   "first_seen": "2026-11-12",
+   "last_seen": "2026-11-12",
+   "active": true,
+   "title": "вул. Личаківська, 67,5 м²",
+   "price_usd": 87000,
+   "rooms": null,
+   "area": 67.5,
+   "district": "Личаківський",
+   "url": "https://www.olx.ua/uk/nedvizhimost/kvartiry/prodazha-kvartir/lvov/q-%D0%B0%D0%B2%D1%81%D1%82%D1%80%D1%96%D0%B9%D1%81%D1%8C%D0%BA%D0%B8%D0%B9-%D0%B1%D1%83%D0%B4%D0%B8%D0%BD%D0%BE%D0%BA/",
+   "description": "Знайдено в пошуку «австрійський будинок» на OLX. Кількість кімнат не вказана. Ціна ≈ 4,0 млн грн.",
+   "published": "2026-10-21",
+   "price_history": [
+    {
+     "date": "2026-11-12",
+     "usd": 87000
+    }
+   ],
+   "flags": {
+    "old_fund": true,
+    "needs_repair": false,
+    "fresh_renovation": false,
+    "owner": false,
+    "apartments": false,
+    "under_construction": false,
+    "spacious": true,
+    "over_budget": true
+   },
+   "score": 5.69,
+   "phones": [],
+   "seller": null
+  },
+  {
+   "id": "manual-10",
+   "source": "Вручну",
+   "photos": [
+    "https://market-images.lunstatic.net/lun-ua/360/480/images/offers/3d1c68fd4766f18acd9ea5577370344b.jpg"
+   ],
+   "address": "Львів",
+   "first_seen": "2026-11-12",
+   "last_seen": "2026-11-12",
+   "active": true,
+   "title": "вул. Наукова, 57",
+   "price_usd": 76000,
+   "rooms": 3,
+   "area": 66,
+   "floor": 3,
+   "floors": 9,
+   "district": "Наукова (Франківський)",
+   "url": "https://lun.ua/sale/lviv/ivana-puliuia-st-1",
+   "description": "У межах бюджету, 66 м². На сторінці LUN будинків поруч.",
+   "published": "2026-11-12",
+   "price_history": [
+    {
+     "date": "2026-11-12",
+     "usd": 76000
+    }
+   ],
+   "flags": {
+    "old_fund": false,
+    "needs_repair": false,
+    "fresh_renovation": false,
+    "owner": false,
+    "apartments": false,
+    "under_construction": false,
+    "spacious": true,
+    "over_budget": false
+   },
+   "score": 5.65,
+   "phones": [],
+   "seller": null
+  },
+  {
+   "id": "manual-11",
+   "source": "Вручну",
+   "photos": [],
+   "address": "Львів",
+   "first_seen": "2026-11-12",
+   "last_seen": "2026-11-12",
+   "active": true,
+   "title": "вул. Наукова, 23",
+   "price_usd": 80000,
+   "rooms": 3,
+   "area": 61.4,
+   "floor": 1,
+   "floors": 9,
+   "district": "Наукова (Франківський)",
+   "url": "https://lun.ua/sale/lviv/ivana-puliuia-st-1",
+   "description": "У межах бюджету, 1-й поверх. На сторінці LUN будинків поруч.",
+   "published": "2026-11-12",
+   "price_history": [
+    {
+     "date": "2026-11-12",
+     "usd": 80000
+    }
+   ],
+   "flags": {
+    "old_fund": false,
+    "needs_repair": false,
+    "fresh_renovation": false,
+    "owner": false,
+    "apartments": false,
+    "under_construction": false,
+    "spacious": true,
+    "over_budget": false
+   },
+   "score": 5.54,
+   "phones": [],
+   "seller": null
+  },
+  {
+   "id": "manual-9",
+   "source": "Вручну",
+   "photos": [
+    "https://market-images.lunstatic.net/lun-ua/360/480/images/offers/1878561834908033.jpg"
+   ],
+   "address": "Львів",
+   "first_seen": "2026-11-12",
+   "last_seen": "2026-11-12",
+   "active": true,
+   "title": "вул. Пулюя, 21",
+   "price_usd": 73000,
+   "rooms": 3,
+   "area": 61.3,
+   "floor": 1,
+   "floors": 9,
+   "district": "Наукова (Франківський)",
+   "url": "https://lun.ua/sale/lviv/ivana-puliuia-st-1",
+   "description": "У межах бюджету, 1-й поверх. На сторінці LUN будинків поруч.",
+   "published": "2026-11-12",
+   "price_history": [
+    {
+     "date": "2026-11-12",
+     "usd": 73000
+    }
+   ],
+   "flags": {
+    "old_fund": false,
+    "needs_repair": false,
+    "fresh_renovation": false,
+    "owner": false,
+    "apartments": false,
+    "under_construction": false,
+    "spacious": true,
+    "over_budget": false
+   },
+   "score": 5.53,
+   "phones": [],
+   "seller": null
+  },
+  {
+   "id": "manual-5",
+   "source": "Вручну",
+   "photos": [],
+   "address": "Львів",
+   "first_seen": "2026-11-12",
+   "last_seen": "2026-11-12",
+   "active": true,
+   "title": "вул. А. Лазаренка, 3-кімнатна",
+   "price_usd": 87000,
+   "rooms": 3,
+   "area": 55.5,
+   "district": "Франківський",
+   "url": "https://www.olx.ua/uk/nedvizhimost/kvartiry/prodazha-kvartir/lvov/q-%D0%B2%D1%96%D0%B4-%D0%B2%D0%BB%D0%B0%D1%81%D0%BD%D0%B8%D0%BA%D0%B0/",
+   "description": "Від власника (OLX). Ціна ≈ 4,0 млн грн.",
+   "is_owner": true,
+   "published": "2026-11-04",
+   "price_history": [
+    {
+     "date": "2026-11-12",
+     "usd": 87000
+    }
+   ],
+   "flags": {
+    "old_fund": false,
+    "needs_repair": false,
+    "fresh_renovation": false,
+    "owner": true,
+    "apartments": false,
+    "under_construction": false,
+    "spacious": false,
+    "over_budget": true
+   },
+   "score": 3.39,
+   "phones": [],
+   "seller": null
+  },
+  {
+   "id": "manual-7",
+   "source": "Вручну",
+   "photos": [],
+   "address": "Львів",
+   "first_seen": "2026-11-12",
+   "last_seen": "2026-11-12",
+   "active": true,
+   "title": "вул. С. Литвиненка, 10",
+   "price_usd": 87000,
+   "rooms": 3,
+   "area": 59.5,
+   "floor": 4,
+   "building": "Цегла, 1960",
+   "district": "Новий Львів (Сихівський)",
+   "url": "https://lun.ua/%D0%BF%D1%80%D0%BE%D0%B4%D0%B0%D0%B6%D0%B0-%D0%BA%D0%B2%D0%B0%D1%80%D1%82%D0%B8%D1%80-%D0%BB%D1%8C%D0%B2%D0%BE%D0%B2-%D1%82%D1%80%D0%B5%D1%85%D0%BA%D0%BE%D0%BC%D0%BD%D0%B0%D1%82%D0%BD%D1%8B%D0%B5-%D0%B1%D0%B5%D0%B7-%D0%BF%D0%BE%D1%81%D1%80%D0%B5%D0%B4%D0%BD%D0%B8%D0%BA%D0%BE%D0%B2",
+   "description": "З ремонтом, біля Стрийського парку.",
+   "published": "2026-11-12",
+   "price_history": [
+    {
+     "date": "2026-11-12",
+     "usd": 87000
+    }
+   ],
+   "flags": {
+    "old_fund": false,
+    "needs_repair": false,
+    "fresh_renovation": false,
+    "owner": false,
+    "apartments": false,
+    "under_construction": false,
+    "spacious": false,
+    "over_budget": true
+   },
+   "score": 1.49,
+   "phones": [],
+   "seller": null
+  }
+ ]
+}
