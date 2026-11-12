@@ -25,7 +25,8 @@
       "enabled": true,
       "olx": {
         "region_id": 5,
-        "city_id": 176
+        "city_id": 176,
+        "slug": "lvov"
       },
       "domria": {
         "slug": "lvov",
@@ -41,7 +42,9 @@
       "name": "Одеса",
       "enabled": false,
       "_comment": "Щоб увімкнути — enabled: true. Ідентифікатори OLX визначаться автоматично.",
-      "olx": {},
+      "olx": {
+        "slug": "odessa"
+      },
       "domria": {
         "slug": "odessa"
       },
@@ -53,7 +56,9 @@
       "key": "khmelnytskyi",
       "name": "Хмельницький",
       "enabled": false,
-      "olx": {},
+      "olx": {
+        "slug": "khmelnitskiy"
+      },
       "domria": {
         "slug": "hmelnitskiy"
       },
@@ -63,7 +68,15 @@
     }
   ],
   "olx": {
-    "pages": 10
+    "pages": 10,
+    "mobile_pages": 6,
+    "mobile_room_filters": [
+      [
+        "trehkomnatnye",
+        "chetyrehkomnatnye"
+      ],
+      []
+    ]
   },
   "domria": {
     "html_pages": 3,

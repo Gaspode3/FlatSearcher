@@ -109,14 +109,18 @@ def money(text: str, rate: float) -> int | None:
 
 
 def usd_rate() -> float:
-    """Курс НБУ гривні до долара; запасне значення — 46."""
+    """Курс НБУ гривні до долара; якщо НБУ не відповідає — курс з попереднього запуску."""
     data = get("https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange",
                params={"valcode": "USD", "json": ""}, as_json=True)
     try:
         return float(data[0]["rate"])
     except Exception:  # noqa: BLE001
-        log("  ! не вдалося отримати курс НБУ, беру 46")
-        return 46.0
+        try:
+            prev = float(json.loads(DATA_PATH.read_text(encoding="utf-8")).get("usd_rate"))
+        except Exception:  # noqa: BLE001
+            prev = 46.0
+        log(f"  ! не вдалося отримати курс НБУ, беру попередній {prev}")
+        return prev
 
 
 def clean(text: str | None, limit: int = 2000) -> str:
@@ -269,10 +273,68 @@ def olx_item(ad: dict, rate: float, city: dict) -> dict:
     )
 
 
+def olx_state_item(ad: dict, rate: float, city: dict) -> dict:
+    """Оголошення зі стану мобільної сторінки OLX (запасний шлях, якщо API відмовляє)."""
+    params = {p.get("key"): p for p in ad.get("params") or []}
+    pv = lambda k: (params.get(k) or {}).get("value")  # noqa: E731
+    reg = (ad.get("price") or {}).get("regularPrice") or {}
+    rooms_raw = (params.get("number_of_rooms_string") or {})
+    rooms = OLX_ROOMS.get(rooms_raw.get("normalizedValue")) or (int(num(rooms_raw.get("value")) or 0) or None)
+    extra = [pv(k) for k in params if any(w in k for w in ("type", "wall", "material", "year", "house", "build"))]
+    loc, m = ad.get("location") or {}, ad.get("map") or {}
+    return base_item(
+        "OLX", f"olx-{ad.get('id')}", city,
+        url=ad.get("url"), title=ad.get("title"),
+        price_usd=to_usd(num(reg.get("value")), reg.get("currencyCode", "UAH"), rate),
+        price_orig=(ad.get("price") or {}).get("displayValue"),
+        rooms=rooms, area=num(pv("total_area")),
+        floor=int(num(pv("floor")) or 0) or None, floors=int(num(pv("total_floors")) or 0) or None,
+        building=", ".join(str(x) for x in extra if x), condition=pv("repair") or "",
+        district=loc.get("districtName"), address=city["name"],
+        photos=[re.sub(r"s=\d+x\d+", "s=1200x900", p) for p in (ad.get("photos") or [])[:20] if isinstance(p, str)],
+        seller=(ad.get("user") or {}).get("name") or (ad.get("contact") or {}).get("name"),
+        description=clean(ad.get("description")), published=(ad.get("createdTime") or "")[:10],
+        is_owner=not ad.get("isBusiness") if ad.get("isBusiness") is not None else None,
+        lat=m.get("lat"), lon=m.get("lon"), geo_approx=bool(m.get("radius")) or not m.get("show_detailed", True),
+    )
+
+
+def scrape_olx_mobile(cfg: dict, rate: float, city: dict) -> list[dict]:
+    slug = (city.get("olx") or {}).get("slug")
+    if not slug:
+        raise RuntimeError("OLX API відмовив, а адреси міста для мобільної версії немає (olx.slug)")
+    items: dict[str, dict] = {}
+    for rooms_filter in cfg["olx"].get("mobile_room_filters", [[]]):
+      for page in range(1, cfg["olx"].get("mobile_pages", 6) + 1):
+        url = f"https://m.olx.ua/uk/nedvizhimost/kvartiry/prodazha-kvartir/{slug}/"
+        params = {"page": page, "search[order]": "created_at:desc"}
+        for i, r in enumerate(rooms_filter):
+            params[f"search[filter_enum_number_of_rooms_string][{i}]"] = r
+        html = get(url, params=params)
+        if not html:
+            if page == 1 and not items:
+                raise RuntimeError("OLX не відповідає (ні API, ні мобільна версія)")
+            break
+        m = re.search(r'window\.__PRERENDERED_STATE__\s*=\s*(".*?");\s*\n', html, re.S) or \
+            re.search(r'window\.__PRERENDERED_STATE__\s*=\s*(".*?");', html, re.S)
+        if not m:
+            break
+        state = json.loads(json.loads(m.group(1)))
+        ads = (((state.get("listing") or {}).get("listing") or {}).get("ads")) or []
+        got = [olx_state_item(ad, rate, city) for ad in ads]
+        for g in got:
+            items.setdefault(g["id"], g)
+        log(f"  OLX (моб.) {city['name']} {'+'.join(rooms_filter) or 'усі'} стор. {page}: {len(got)}, підходять {sum(passes(x, cfg) for x in got)}")
+        if not ads:
+            break
+        time.sleep(2)
+    return list(items.values())
+
+
 def scrape_olx(cfg: dict, rate: float, city: dict) -> list[dict]:
     oc = olx_resolve_city(city)
     if not oc:
-        return []
+        return scrape_olx_mobile(cfg, rate, city)
     items = []
     per = 50
     for page in range(cfg["olx"].get("pages", 10)):
@@ -282,7 +344,8 @@ def scrape_olx(cfg: dict, rate: float, city: dict) -> list[dict]:
             params["region_id"] = oc["region_id"]
         data = get("https://www.olx.ua/api/v1/offers/", params=params, as_json=True)
         if data is None and page == 0:
-            raise RuntimeError("OLX API не відповідає")
+            log("  OLX API відмовив — беру мобільну версію сайту")
+            return scrape_olx_mobile(cfg, rate, city)
         ads = (data or {}).get("data") or []
         got = [olx_item(ad, rate, city) for ad in ads]
         items.extend(got)
