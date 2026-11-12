@@ -113,5 +113,7 @@
       "https://svitkvartyr.com/prodazh-kvartyr/{slug}/avstrijskyj-budynok",
       "https://svitkvartyr.com/prodazh-kvartyr/{slug}/vtorynnyj-rynok"
     ]
-  }
+  },
+  "fresh_threshold": 50,
+  "agency_phone_threshold": 10
 }

@@ -150,6 +150,49 @@ UNDER_CONSTR_RE = re.compile(r"переуступк|будується|здач�
 PHONE_RE = re.compile(r"(?<!\d)(?:\+?3\s?8\s?)?\(?0\s?\d{2}\)?[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2}(?!\d)")
 
 
+UA_MONTHS = {"січ": 1, "лют": 2, "бер": 3, "квіт": 4, "трав": 5, "черв": 6, "лип": 7, "серп": 8, "верес": 9, "жовт": 10, "листоп": 11, "груд": 12,
+             "янв": 1, "фев": 2, "мар": 3, "апр": 4, "мая": 5, "май": 5, "июн": 6, "июл": 7, "авг": 8, "сен": 9, "окт": 10, "ноя": 11, "дек": 12}
+
+
+def parse_date(text: str | None) -> str | None:
+    """'вчора', '3 дні тому', '6 листопада', 'Опубликовано 9 ноя.', '11/11/2026' → 'YYYY-MM-DD'."""
+    if not text:
+        return None
+    t = text.lower()
+    today = dt.date.today()
+    if re.search(r"сьогодні|сегодня|годин\w* тому|час\w* назад|хвилин|минут", t):
+        return today.isoformat()
+    if re.search(r"вчора|вчера", t):
+        return (today - dt.timedelta(days=1)).isoformat()
+    m = re.search(r"(\d+)\s*(дн|день|дні|днів|тиж|нед|міс|мес)", t)
+    if m:
+        n = int(m.group(1)); unit = m.group(2)
+        days = n * (7 if unit.startswith(("тиж", "нед")) else 30 if unit.startswith(("міс", "мес")) else 1)
+        return (today - dt.timedelta(days=days)).isoformat()
+    m = re.search(r"(\d{1,2})[./](\d{1,2})[./](\d{4})", t)
+    if m:
+        try:
+            return dt.date(int(m.group(3)), int(m.group(2)), int(m.group(1))).isoformat()
+        except ValueError:
+            return None
+    m = re.search(r"(\d{4})-(\d{2})-(\d{2})", t)
+    if m:
+        return m.group(0)
+    m = re.search(r"(\d{1,2})\s+([а-яіїє]{3,})\.?\s*(\d{4})?", t)
+    if m:
+        mon = next((v for k, v in UA_MONTHS.items() if m.group(2).startswith(k)), None)
+        if mon:
+            year = int(m.group(3)) if m.group(3) else today.year
+            try:
+                d = dt.date(year, mon, int(m.group(1)))
+            except ValueError:
+                return None
+            if d > today:
+                d = d.replace(year=d.year - 1)
+            return d.isoformat()
+    return None
+
+
 def phones_from_text(text: str) -> list[str]:
     out = []
     for m in PHONE_RE.finditer(text or ""):
@@ -439,6 +482,9 @@ def scrape_domria(cfg: dict, rate: float, city: dict) -> list[dict]:
                     description=text[:1200],
                     address=street_query(title),
                     is_owner=True if "bez-rieltora" in base else None,
+                    published=parse_date((re.search(r"(?:Опубликовано|Опубліковано)\s+([^·]+?)(?:\s*·|$)", text) or [None, None])[1])
+                              or parse_date((re.search(r"(\d+\s*(?:часа?|часов|годин\w*)\s*(?:назад|тому)|Вчера[^·]*|Вчора[^·]*)", text) or [None, None])[1]),
+                    verified=bool(re.search(r"Перевірена квартира|Перевірено", text)),
                 )
                 found += 1
             log(f"  DOM.RIA {base} стор. {page}: {found}")
@@ -502,6 +548,7 @@ def scrape_rieltor(cfg: dict, rate: float, city: dict) -> list[dict]:
                         if u not in photos:
                             photos.append(u)
                 author = t(".catalog-card-author-subtitle")
+                updated = parse_date(t(".catalog-card-update"))
                 phones = [p.get_text(strip=True) for p in c.select(".catalog-card-author-phones")]
                 url = a["href"] if a["href"].startswith("http") else "https://rieltor.ua" + a["href"]
                 address = t(".catalog-card-address")
@@ -524,6 +571,7 @@ def scrape_rieltor(cfg: dict, rate: float, city: dict) -> list[dict]:
                     seller=" · ".join(x for x in (t(".catalog-card-author-title"), author) if x),
                     phones=list(dict.fromkeys(phones)),
                     is_owner=("власник" in author.lower()) if author else None,
+                    updated=updated,
                 )
                 found += 1
             log(f"  rieltor {city['name']} {rooms}к стор. {page}: {found}")
@@ -595,6 +643,7 @@ def scrape_mistechko(cfg: dict, rate: float, city: dict) -> list[dict]:
                         if u not in photos:
                             photos.append(u)
                 addr = t(".sr-2-item-address")
+                mdate = parse_date(t(".sr-2-item-date"))
                 items[rid] = base_item(
                     "mistechko", rid, city,
                     url=href,
@@ -608,6 +657,7 @@ def scrape_mistechko(cfg: dict, rate: float, city: dict) -> list[dict]:
                     building=btype,
                     district=addr.split(",", 1)[1].strip() if "," in addr else None,
                     photos=photos,
+                    updated=mdate,
                 )
                 found += 1
             log(f"  mistechko {url} : {found}")
@@ -682,6 +732,7 @@ def scrape_svitkvartyr(cfg: dict, rate: float, city: dict) -> list[dict]:
                 btype = next((v for k, v in vals.items() if "тип" in k), "")
                 title = c.select_one(".title").get_text(" ", strip=True) if c.select_one(".title") else "Квартира"
                 dm = re.search(r"тип будівлі\s*(.+)$", text, re.S)
+                upd = parse_date((re.search(r"Оновлено:\s*([\d/]+)", text) or [None, None])[1])
                 items[rid] = base_item(
                     "svitkvartyr", rid, city,
                     url="https://svitkvartyr.com" + re.search(r"/adverts/\d+", a["href"]).group(0),
@@ -696,6 +747,7 @@ def scrape_svitkvartyr(cfg: dict, rate: float, city: dict) -> list[dict]:
                     district=title.split(",", 1)[1].strip() if "," in title else None,
                     address=f"вул. {title.split(',')[0]}, {city['name']}" if "," in title else None,
                     description=clean(dm.group(1)) if dm else "",
+                    updated=upd,
                 )
                 found += 1
             log(f"  svitkvartyr {base} стор. {page}: {found}")
@@ -756,6 +808,98 @@ def geocode(items: list[dict], cfg: dict) -> None:
     GEOCACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     GEOCACHE_PATH.write_text(json.dumps(cache, ensure_ascii=False, indent=0), encoding="utf-8")
     log(f"  Геокодування: запитів {n}")
+
+
+# ================================================================ свіжість і дублікати
+
+PRIMARY = {"OLX", "DOM.RIA", "rieltor.ua"}
+TRUST = {"OLX": 0, "DOM.RIA": 0, "rieltor.ua": 0, "mistechko": -10, "svitkvartyr": -30, "Вручну": 0}
+SOURCE_RANK = {"OLX": 3, "DOM.RIA": 3, "rieltor.ua": 2, "mistechko": 1, "svitkvartyr": 0, "Вручну": -1}
+
+
+def street_key(it: dict) -> str:
+    text = (it.get("address") or it.get("title") or "").lower()
+    text = re.sub(r"\b(вул|вулиця|просп|пр|пл|площа|бульв|пров)\b\.?", " ", text)
+    m = re.search(r"[а-яіїєґ'’-]{4,}", text)
+    return m.group(0)[:6] if m else ""
+
+
+def analyze(items: list[dict], cfg: dict) -> None:
+    """Дублікати між майданчиками, «агентські бази» за телефоном і оцінка свіжості 0–100."""
+    today = dt.date.today()
+    # 1) дублікати: однакові кімнати, площа ±1.5 м², ціна ±4 %, та сама вулиця (якщо відома)
+    for it in items:
+        it.pop("dup_of", None)
+        it["also_on"] = []
+    live = [i for i in items if i.get("active", True) and i.get("area") and i.get("price_usd")]
+    live.sort(key=lambda i: (-SOURCE_RANK.get(i["source"], 0), -len(i.get("photos") or [])))
+    for i, a in enumerate(live):
+        if a.get("dup_of"):
+            continue
+        for b in live[i + 1:]:
+            if b.get("dup_of") or b["source"] == a["source"] or a.get("rooms") != b.get("rooms"):
+                continue
+            if abs(a["area"] - b["area"]) > 1.5 or abs(a["price_usd"] - b["price_usd"]) > 0.04 * a["price_usd"]:
+                continue
+            ka, kb = street_key(a), street_key(b)
+            if ka and kb and ka != kb:
+                continue
+            if not (ka and kb) and a.get("district") and b.get("district") and a["district"].split()[0] != b["district"].split()[0]:
+                continue
+            b["dup_of"] = a["id"]
+            a["also_on"].append({"source": b["source"], "url": b["url"], "id": b["id"]})
+            b["also_on"].append({"source": a["source"], "url": a["url"], "id": a["id"]})
+            for k in ("phones", "photos"):
+                if len(b.get(k) or []) > len(a.get(k) or []) and k == "photos":
+                    a[k] = b[k]
+            a["phones"] = list(dict.fromkeys((a.get("phones") or []) + (b.get("phones") or [])))
+            if not a.get("lat") and b.get("lat"):
+                a["lat"], a["lon"], a["geo_approx"] = b["lat"], b["lon"], b.get("geo_approx", True)
+    # 2) скільки оголошень на одному телефоні
+    per_phone: dict[str, int] = {}
+    for it in items:
+        for p in set(re.sub(r"\D", "", x)[-10:] for x in it.get("phones") or []):
+            per_phone[p] = per_phone.get(p, 0) + 1
+    # 3) оцінка свіжості
+    for it in items:
+        if it["source"] == "Вручну":
+            it["fresh"], it["fresh_why"] = None, []
+            continue
+        sc, why = 70, []
+        posted = it.get("published") or it.get("updated")
+        if it.get("published"):
+            age = (today - dt.date.fromisoformat(it["published"])).days
+            if age > 90:
+                sc -= 40; why.append(f"опубліковано {age} дн. тому")
+            elif age > 45:
+                sc -= 15; why.append(f"опубліковано {age} дн. тому")
+            elif age <= 14:
+                sc += 10
+        elif posted and it["source"] != "svitkvartyr":
+            if (today - dt.date.fromisoformat(posted)).days <= 14:
+                sc += 5
+        seen_days = (today - dt.date.fromisoformat(it.get("first_seen", today.isoformat()))).days
+        if seen_days > 60:
+            sc -= 10; why.append(f"висить у нас уже {seen_days} дн.")
+        t = TRUST.get(it["source"], 0)
+        if t:
+            sc += t; why.append(f"джерело з нижчою довірою ({it['source']})")
+        if any(x["source"] in PRIMARY for x in it.get("also_on") or []):
+            sc += 20
+        elif it["source"] not in PRIMARY:
+            why.append("немає на OLX / DOM.RIA / rieltor")
+        if it.get("verified"):
+            sc += 30
+        addr = it.get("address") or it.get("title") or ""
+        if it["source"] in ("svitkvartyr", "mistechko") and not re.search(r"\d", addr):
+            sc -= 10; why.append("без номера будинку")
+        busy = max((per_phone.get(re.sub(r"\D", "", p)[-10:], 0) for p in it.get("phones") or []), default=0)
+        if busy >= cfg.get("agency_phone_threshold", 10):
+            sc -= 15; why.append(f"телефон у {busy} оголошеннях — схоже на агентську базу")
+        it["fresh"] = max(0, min(100, sc))
+        it["fresh_why"] = why
+        it["suspicious"] = it["fresh"] < cfg.get("fresh_threshold", 50)
+        it["score"] = round(score(it) - (2 if it["suspicious"] else 0), 2)
 
 
 # ================================================================ merge & save
@@ -858,6 +1002,7 @@ def main() -> int:
         if (src_name.get(it["id"].split("-")[0]), it.get("city", "lviv")) in ok_sources:
             it["active"] = False
     items = [it for it in by_id.values() if it.get("active") or it.get("last_seen", TODAY) >= cutoff or it.get("source") == "Вручну"]
+    analyze(items, CFG)
     items.sort(key=lambda x: (-x.get("score", 0), x.get("price_usd") or 0))
 
     DATA_PATH.parent.mkdir(parents=True, exist_ok=True)

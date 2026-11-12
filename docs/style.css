@@ -237,3 +237,12 @@ h1 { font-size: clamp(26px, 5vw, 38px); font-weight: 800; letter-spacing: -0.02e
 }
 .mapslide .attr { position: absolute; right: 4px; bottom: 2px; font-size: 10px; color: #333; background: rgba(255,255,255,.7); padding: 0 4px; }
 .maplink { color: var(--accent); font-weight: 700; text-decoration: none; font-size: 13px; }
+
+.stale {
+  margin: 0; font-size: 13px; color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent);
+  border-radius: 8px; padding: 6px 8px;
+}
+.stale[hidden], .alsoon[hidden] { display: none; }
+.alsoon { margin: 0; font-size: 13px; color: var(--muted); }
+.alsoon a { color: var(--accent); font-weight: 700; text-decoration: none; margin-left: 4px; }
+.card.suspicious .gallery { opacity: .85; }

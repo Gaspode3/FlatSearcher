@@ -26,7 +26,7 @@
     return !REJECTED.has(st);
   };
 
-  const filterIds = ["f-city", "f-rooms", "f-price", "f-area", "f-sort", "f-old", "f-repair", "f-owner", "f-budget", "f-inactive"];
+  const filterIds = ["f-city", "f-rooms", "f-price", "f-area", "f-sort", "f-old", "f-repair", "f-owner", "f-budget", "f-fresh", "f-inactive"];
   const saveFilters = () => {
     const f = {};
     filterIds.forEach((id) => { const e = $(id); f[id] = e.type === "checkbox" ? e.checked : e.value; });
@@ -85,6 +85,7 @@
     if (f.old_fund) b.push(["🏛 Старий фонд", "good"]);
     if (f.needs_repair) b.push(["🔨 Під ремонт", "good"]);
     if (f.owner) b.push(["👤 Власник", "good"]);
+    if (it.verified) b.push(["✅ Перевірено DIM.RIA", "good"]);
     if (f.spacious) b.push(["📐 Простора", ""]);
     if (f.fresh_renovation) b.push(["✨ Свіжий ремонт", ""]);
     if (f.over_budget) b.push(["💸 Вище бюджету", "warn"]);
@@ -210,6 +211,23 @@
     if (it.link_kind === "search") { warn.hidden = false; warn.textContent = "⚠ Прямого посилання на це оголошення немає — кнопка веде на сторінку пошуку, де його треба знайти за описом."; }
     if (it.link_kind === "building") { warn.hidden = false; warn.textContent = "⚠ Посилання веде на сторінку будинку на LUN, де є це оголошення серед інших."; }
     if (it.id === focusId) node.classList.add("focus");
+    if (it.suspicious) {
+      node.classList.add("suspicious");
+      const st = node.querySelector(".stale");
+      st.hidden = false;
+      st.textContent = `⚠ Можливо застаріле (свіжість ${it.fresh}/100): ${(it.fresh_why || []).join("; ")}`;
+    }
+    const others = (it.also_on || []).filter((x) => x.source !== "Вручну");
+    if (others.length) {
+      const ao = node.querySelector(".alsoon");
+      ao.hidden = false;
+      ao.append("🔁 Також на:");
+      for (const x of others) {
+        const a = el("a", null, x.source);
+        a.href = x.url; a.target = "_blank"; a.rel = "noopener";
+        ao.append(a);
+      }
+    }
 
     // details
     const dl = node.querySelector(".details");
@@ -223,6 +241,8 @@
       ["Опубліковано", it.published],
       ["Ціна в оголошенні", it.price_orig],
       ["Знайдено", it.first_seen],
+      ["Оновлено на сайті", it.updated && it.updated !== it.published ? it.updated : null],
+      ["Свіжість", it.fresh != null ? `${it.fresh}/100` : null],
     ];
     for (const [k, v] of rows) {
       if (v == null || v === "") continue;
@@ -311,6 +331,8 @@
       if ($("f-owner").checked && !f.owner) return false;
       if ($("f-budget").checked && (it.price_usd || 0) > budget) return false;
       if (!$("f-inactive").checked && it.active === false) return false;
+      if (it.dup_of && data.items.some((x) => x.id === it.dup_of)) return false;
+      if ($("f-fresh").checked && it.suspicious) return false;
       return true;
     });
   }
