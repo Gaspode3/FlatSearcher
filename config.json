@@ -1,9 +1,9 @@
 {
   "_comment": "Критерії пошуку. Після зміни закомітьте файл — наступний запуск використає нові значення.",
   "site_url": "https://gaspode3.github.io/FlatSearcher",
-  "rooms_min": 1,
+  "rooms_min": 2,
   "rooms_max": 10,
-  "default_rooms": "3+",
+  "default_rooms": "2+",
   "notify_rooms_min": 3,
   "budget_usd": 85000,
   "max_price_usd": 90000,
@@ -68,14 +68,19 @@
     }
   ],
   "olx": {
-    "pages": 15,
-    "mobile_pages": 6,
-    "mobile_room_filters": [
-      [
-        "trehkomnatnye",
-        "chetyrehkomnatnye"
-      ],
-      []
+    "passes": [
+      {
+        "rooms": [
+          "dvuhkomnatnye",
+          "trehkomnatnye",
+          "chetyrehkomnatnye"
+        ],
+        "pages": 15
+      },
+      {
+        "rooms": [],
+        "pages": 4
+      }
     ]
   },
   "domria": {
@@ -85,15 +90,13 @@
       "https://dom.ria.com/uk/prodazha-kvartir/{slug}-bez-rieltora/",
       "https://dom.ria.com/uk/prodazha-kvartir/{slug}-3k/",
       "https://dom.ria.com/uk/prodazha-kvartir/{slug}-4k/",
-      "https://dom.ria.com/uk/prodazha-kvartir/{slug}-2k/",
-      "https://dom.ria.com/uk/prodazha-kvartir/{slug}-1k/"
+      "https://dom.ria.com/uk/prodazha-kvartir/{slug}-2k/"
     ],
     "api_pages": 2,
     "api_requests_per_run": 25
   },
   "rieltor": {
     "rooms": [
-      1,
       2,
       3,
       4
@@ -128,5 +131,6 @@
     "docs/data/listings-home.json"
   ],
   "_sources_comment": "Усі джерела збирає GitHub (OLX і rieltor — через curl). Домашній збір (windows/) — запасний варіант: home_enabled: true.",
-  "home_enabled": false
+  "home_enabled": false,
+  "notify_min_area_2rooms": 60
 }

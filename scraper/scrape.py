@@ -268,6 +268,8 @@ def score(item: dict) -> float:
     s -= 3 if f["apartments"] else 0
     s -= 2 if f["under_construction"] else 0
     s += min((item.get("area") or 0) / 40, 3)
+    if (item.get("rooms") or 0) and (item.get("area") or 0) / item["rooms"] >= 30:
+        s += 1  # великі кімнати — типово для старого фонду
     s += 0.5 if len(item.get("photos") or []) >= 3 else 0
     return round(s, 2)
 
@@ -412,28 +414,35 @@ def scrape_olx_mobile(cfg: dict, rate: float, city: dict) -> list[dict]:
 
 
 def scrape_olx(cfg: dict, rate: float, city: dict) -> list[dict]:
+    """Кілька проходів API: спершу з фільтром кімнат (2–4), потім загальний."""
     oc = olx_resolve_city(city)
     if not oc:
         return scrape_olx_mobile(cfg, rate, city)
-    items = []
+    items: dict[str, dict] = {}
     per = 50
-    for page in range(cfg["olx"].get("pages", 10)):
-        params = {"offset": page * per, "limit": per, "category_id": 1758, "city_id": oc["city_id"],
-                  "sort_by": "created_at:desc"}
-        if oc.get("region_id"):
-            params["region_id"] = oc["region_id"]
-        data = get("https://www.olx.ua/api/v1/offers/", params=params, as_json=True)
-        if data is None and page == 0:
-            log("  OLX API відмовив — беру мобільну версію сайту")
-            return scrape_olx_mobile(cfg, rate, city)
-        ads = (data or {}).get("data") or []
-        got = [olx_item(ad, rate, city) for ad in ads]
-        items.extend(got)
-        log(f"  OLX {city['name']} стор. {page + 1}: {len(got)}, підходять {sum(passes(x, cfg) for x in got)}")
-        if len(ads) < per:
-            break
-        time.sleep(1.5)
-    return items
+    for pas in cfg["olx"].get("passes", [{"rooms": [], "pages": 10}]):
+        rooms_f = pas.get("rooms") or []
+        label = "+".join(str(OLX_ROOMS.get(r, r)) for r in rooms_f) + "к" if rooms_f else "усі"
+        for page in range(pas.get("pages", 10)):
+            params = {"offset": page * per, "limit": per, "category_id": 1758, "city_id": oc["city_id"],
+                      "sort_by": "created_at:desc"}
+            if oc.get("region_id"):
+                params["region_id"] = oc["region_id"]
+            for i, r in enumerate(rooms_f):
+                params[f"filter_enum_number_of_rooms_string[{i}]"] = r
+            data = get("https://www.olx.ua/api/v1/offers/", params=params, as_json=True)
+            if data is None and page == 0 and not items:
+                log("  OLX API відмовив — беру мобільну версію сайту")
+                return scrape_olx_mobile(cfg, rate, city)
+            ads = (data or {}).get("data") or []
+            got = [olx_item(ad, rate, city) for ad in ads]
+            for g in got:
+                items.setdefault(g["id"], g)
+            log(f"  OLX {city['name']} {label} стор. {page + 1}: {len(got)}, підходять {sum(passes(x, cfg) for x in got)}")
+            if len(ads) < per:
+                break
+            time.sleep(1.5)
+    return list(items.values())
 
 
 # ================================================================ DOM.RIA
@@ -1129,11 +1138,15 @@ def main() -> int:
     }, ensure_ascii=False, indent=1), encoding="utf-8")
 
     NEW_PATH.parent.mkdir(parents=True, exist_ok=True)
-    notify = [it for it in new_items if (it.get("rooms") or 0) >= CFG["notify_rooms_min"] and not it["flags"]["over_budget"]]
+    def worth(it: dict) -> bool:
+        r, a = it.get("rooms") or 0, it.get("area") or 0
+        return (r >= CFG["notify_rooms_min"] or (r >= 2 and a >= CFG.get("notify_min_area_2rooms", 60))) \
+            and not it["flags"]["over_budget"] and not it.get("dup_of")
+    notify = [it for it in new_items if worth(it)]
     if notify:
         notify.sort(key=lambda x: -x["score"])
         site = CFG.get("site_url", "").rstrip("/")
-        lines = [f"Нових варіантів у бюджеті ({CFG['notify_rooms_min']}+ кімнати): **{len(notify)}**\n"]
+        lines = [f"Нових варіантів у бюджеті ({CFG['notify_rooms_min']}+ кімнати або 2 кімнати від {CFG.get('notify_min_area_2rooms', 60)} м²): **{len(notify)}**\n"]
         for it in notify[:30]:
             tags = [t for t, on in (("🏛 старий фонд", it["flags"]["old_fund"]), ("🔨 під ремонт", it["flags"]["needs_repair"]),
                                     ("👤 власник", it["flags"]["owner"])) if on]
