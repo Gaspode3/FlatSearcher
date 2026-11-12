@@ -31,6 +31,14 @@
   };
   const readFilters = () => { try { return JSON.parse(localStorage.getItem(STORE + "-filters") || "{}"); } catch { return {}; } };
 
+  const cardLink = (it) => location.origin + location.pathname + "#id=" + encodeURIComponent(it.id);
+  const focusFromHash = () => { const m = location.hash.match(/^#id=(.+)$/); return m ? decodeURIComponent(m[1]) : null; };
+  let focusId = focusFromHash();
+  const copy = async (text, msg) => {
+    try { await navigator.clipboard.writeText(text); toast(msg); }
+    catch { window.prompt("Скопіюйте:", text); }
+  };
+
   const daysAgo = (iso) => Math.floor((Date.now() - new Date(iso + "T00:00:00").getTime()) / 864e5);
 
   const badgeList = (it) => {
@@ -59,6 +67,8 @@
       it.district ? `📍 ${it.district}` : "",
       tags,
       (it.phones || []).length ? `📞 ${it.phones.join(", ")}${it.seller ? " (" + it.seller + ")" : ""}` : "",
+      `🔗 На нашому сайті: ${cardLink(it)}`,
+      it.link_kind === "search" ? "" : `📎 Оголошення: ${it.url}`,
     ].filter(Boolean).join("\n");
   };
 
@@ -68,26 +78,25 @@
     const t = $("toast"); t.textContent = msg; t.hidden = false;
     clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 1800);
   };
-  async function share(it) {
-    const text = shareText(it);
-    if (navigator.share && matchMedia("(hover: none)").matches) {
-      try { await navigator.share({ title: it.title, text, url: it.url }); return; } catch (e) { if (e.name === "AbortError") return; }
-    }
+  function share(it) {
     shareItem = it;
-    const full = text + "\n" + it.url;
-    $("sh-wa").href = "https://wa.me/?text=" + encodeURIComponent(full);
-    $("sh-tg").href = "https://t.me/share/url?url=" + encodeURIComponent(it.url) + "&text=" + encodeURIComponent(text);
-    $("sh-vb").href = "viber://forward?text=" + encodeURIComponent(full);
+    const text = shareText(it);
+    $("sh-sub").textContent = `${it.title || "Квартира"} · $${fmt(it.price_usd)} · код #${it.id}`;
+    $("sh-wa").href = "https://wa.me/?text=" + encodeURIComponent(text);
+    $("sh-tg").href = "https://t.me/share/url?url=" + encodeURIComponent(cardLink(it)) + "&text=" + encodeURIComponent(text);
+    $("sh-vb").href = "viber://forward?text=" + encodeURIComponent(text);
+    $("sh-native").hidden = !navigator.share;
     $("share-sheet").hidden = false;
   }
+  $("sh-native").onclick = async () => {
+    if (!shareItem) return;
+    $("share-sheet").hidden = true;
+    try { await navigator.share({ title: shareItem.title, text: shareText(shareItem) }); } catch {}
+  };
+  $("sh-copy-card").onclick = () => { if (shareItem) copy(cardLink(shareItem), "Посилання на картку скопійовано"); $("share-sheet").hidden = true; };
   $("sh-close").onclick = () => { $("share-sheet").hidden = true; };
   $("share-sheet").onclick = (e) => { if (e.target.id === "share-sheet") $("share-sheet").hidden = true; };
-  $("sh-copy").onclick = async () => {
-    if (!shareItem) return;
-    try { await navigator.clipboard.writeText(shareText(shareItem) + "\n" + shareItem.url); toast("Скопійовано"); }
-    catch { toast("Не вдалося скопіювати"); }
-    $("share-sheet").hidden = true;
-  };
+  $("sh-copy").onclick = () => { if (shareItem) copy(shareText(shareItem), "Скопійовано"); $("share-sheet").hidden = true; };
 
   // ---------- card
   function buildCard(it) {
@@ -137,6 +146,13 @@
     const hist = it.price_history || [];
     if (hist.length > 1 && hist[0].usd > it.price_usd) node.querySelector(".price").append(el("span", "drop", `↓ було $${fmt(hist[0].usd)}`));
     node.querySelector(".title").textContent = it.title || "Квартира";
+    const code = node.querySelector(".code");
+    code.textContent = `#${it.id} · скопіювати посилання`;
+    code.onclick = () => copy(cardLink(it), "Посилання на картку скопійовано");
+    const warn = node.querySelector(".linkwarn");
+    if (it.link_kind === "search") { warn.hidden = false; warn.textContent = "⚠ Прямого посилання на це оголошення немає — кнопка веде на сторінку пошуку, де його треба знайти за описом."; }
+    if (it.link_kind === "building") { warn.hidden = false; warn.textContent = "⚠ Посилання веде на сторінку будинку на LUN, де є це оголошення серед інших."; }
+    if (it.id === focusId) node.classList.add("focus");
 
     // details
     const dl = node.querySelector(".details");
@@ -191,6 +207,8 @@
     // actions
     const open = node.querySelector(".open");
     open.href = it.url;
+    if (it.link_kind === "search") open.textContent = "Пошук";
+    if (it.link_kind === "building") open.textContent = "Будинок";
     open.onclick = () => { setMine(it.id, { seen: true }); seenBtn.classList.add("on"); updateCounts(); };
     node.querySelector(".share").onclick = () => share(it);
     const seenBtn = node.querySelector(".seen");
@@ -251,7 +269,9 @@
       ppm: (a, b) => ppm(a) - ppm(b),
       area: (a, b) => (b.area || 0) - (a.area || 0),
     };
-    const items = filtered().filter((it) => inTab(it, tab)).sort(sorters[$("f-sort").value] || sorters.score);
+    const focused = focusId ? data.items.filter((it) => it.id === focusId) : [];
+    $("focusbar").hidden = !focused.length;
+    const items = focused.length ? focused : filtered().filter((it) => inTab(it, tab)).sort(sorters[$("f-sort").value] || sorters.score);
     $("count").textContent = `Показано ${items.length} з ${data.items.length}`;
     const list = $("list");
     list.replaceChildren();
@@ -263,8 +283,11 @@
     for (const it of items) list.append(buildCard(it));
   }
 
+  const clearFocus = () => { focusId = null; history.replaceState(null, "", location.pathname); };
+  $("focus-clear").onclick = () => { clearFocus(); render(); };
+  window.addEventListener("hashchange", () => { focusId = focusFromHash(); render(); window.scrollTo({ top: 0 }); });
   document.querySelectorAll("#tabs button").forEach((b) => {
-    b.onclick = () => { tab = b.dataset.tab; try { localStorage.setItem(STORE + "-tab", tab); } catch {} render(); window.scrollTo({ top: 0 }); };
+    b.onclick = () => { clearFocus(); tab = b.dataset.tab; try { localStorage.setItem(STORE + "-tab", tab); } catch {} render(); window.scrollTo({ top: 0 }); };
   });
 
   async function load() {

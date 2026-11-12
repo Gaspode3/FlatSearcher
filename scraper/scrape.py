@@ -49,6 +49,9 @@ def get(url: str, *, params: dict | None = None, as_json: bool = False, tries: i
     for attempt in range(1, tries + 1):
         try:
             r = requests.get(url, params=params, headers=HEADERS, timeout=30)
+            if r.status_code in (403, 404, 410):
+                log(f"  ! {url}: HTTP {r.status_code} — пропускаю")
+                return None
             if r.status_code == 429:
                 time.sleep(10 * attempt)
                 continue
@@ -301,11 +304,13 @@ def parse_olx_cards(html: str, rate: float) -> list[dict]:
 
 def scrape_olx(cfg: dict, rate: float) -> list[dict]:
     items: list[dict] = []
+    blocked = False
     for base in cfg["olx"]["search_urls"]:
         for page in range(1, cfg["olx"]["pages"] + 1):
             url = base + (f"&page={page}" if page > 1 else "")
             html = get(url)
             if not html:
+                blocked = blocked or page == 1
                 break
             ads = parse_olx_state(html, rate) or parse_olx_cards(html, rate)
             log(f"  OLX стор. {page}: {len(ads)}")
@@ -332,6 +337,8 @@ def scrape_olx(cfg: dict, rate: float) -> list[dict]:
                     if d:
                         it["description"] = d.get_text(" ", strip=True)[:1200]
             time.sleep(1.5)
+    if blocked and not items:
+        raise RuntimeError("OLX не відповідає або блокує запити з цього сервера")
     return items
 
 

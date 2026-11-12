@@ -21,10 +21,13 @@
     "city_id": 5,
     "api_pages": 1,
     "api_info_per_run": 25,
-    "html_pages": 3,
+    "html_pages": 5,
     "html_urls": [
-      "https://dom.ria.com/uk/prodazha-kvartir/lvov-bez-rieltora/",
-      "https://dom.ria.com/uk/prodazha-kvartir/lvov/"
+      "https://dom.ria.com/uk/prodazha-kvartir/lvov-bez-rieltora-3k/",
+      "https://dom.ria.com/uk/prodazha-kvartir/lvov-bez-rieltora-4k/",
+      "https://dom.ria.com/uk/prodazha-kvartir/lvov-3k/",
+      "https://dom.ria.com/uk/prodazha-kvartir/lvov-4k/",
+      "https://dom.ria.com/uk/prodazha-kvartir/lvov-bez-rieltora/"
     ]
   }
 }

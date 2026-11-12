@@ -56,16 +56,23 @@
     </div>
   </section>
 
+  <div class="focusbar" id="focusbar" hidden>
+    <span>Показано одне оголошення</span>
+    <button id="focus-clear">← До всіх</button>
+  </div>
   <p class="count" id="count"></p>
   <main id="list" class="grid"></main>
 
   <div class="sheet" id="share-sheet" hidden>
     <div class="sheet-box" role="dialog" aria-label="Поділитись">
       <p class="sheet-title">Поділитись</p>
+      <p class="sheet-sub" id="sh-sub"></p>
       <a id="sh-wa" target="_blank" rel="noopener">WhatsApp</a>
       <a id="sh-tg" target="_blank" rel="noopener">Telegram</a>
       <a id="sh-vb">Viber</a>
-      <button id="sh-copy">Скопіювати текст і посилання</button>
+      <button id="sh-native" hidden>Інший застосунок…</button>
+      <button id="sh-copy-card">Скопіювати посилання на картку</button>
+      <button id="sh-copy">Скопіювати весь текст</button>
       <button id="sh-close" class="ghost">Закрити</button>
     </div>
   </div>
@@ -81,6 +88,8 @@
       <div class="body">
         <div class="price"><strong></strong><span class="ppm"></span></div>
         <h2 class="title"></h2>
+        <button class="code" title="Скопіювати посилання на цю картку"></button>
+        <p class="linkwarn" hidden></p>
         <dl class="details"></dl>
         <div class="badges"></div>
         <div class="descwrap">

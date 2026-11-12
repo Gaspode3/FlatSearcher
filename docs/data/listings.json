@@ -80,7 +80,8 @@
    },
    "score": 7.06,
    "phones": [],
-   "seller": null
+   "seller": null,
+   "link_kind": "search"
   },
   {
    "id": "manual-4",
@@ -122,7 +123,8 @@
    },
    "score": 6.55,
    "phones": [],
-   "seller": "Власник"
+   "seller": "Власник",
+   "link_kind": "building"
   },
   {
    "id": "manual-1",
@@ -165,7 +167,8 @@
    "phones": [
     "+38 097 944 20 47"
    ],
-   "seller": "АН Golden City (Сніжана)"
+   "seller": "АН Golden City (Сніжана)",
+   "link_kind": "search"
   },
   {
    "id": "manual-8",
@@ -201,7 +204,8 @@
    },
    "score": 5.81,
    "phones": [],
-   "seller": null
+   "seller": null,
+   "link_kind": "search"
   },
   {
    "id": "manual-6",
@@ -242,7 +246,8 @@
    },
    "score": 5.75,
    "phones": [],
-   "seller": null
+   "seller": null,
+   "link_kind": "building"
   },
   {
    "id": "manual-3",
@@ -278,7 +283,8 @@
    },
    "score": 5.69,
    "phones": [],
-   "seller": null
+   "seller": null,
+   "link_kind": "search"
   },
   {
    "id": "manual-10",
@@ -318,7 +324,8 @@
    },
    "score": 5.65,
    "phones": [],
-   "seller": null
+   "seller": null,
+   "link_kind": "building"
   },
   {
    "id": "manual-11",
@@ -356,7 +363,8 @@
    },
    "score": 5.54,
    "phones": [],
-   "seller": null
+   "seller": null,
+   "link_kind": "building"
   },
   {
    "id": "manual-9",
@@ -396,7 +404,8 @@
    },
    "score": 5.53,
    "phones": [],
-   "seller": null
+   "seller": null,
+   "link_kind": "building"
   },
   {
    "id": "manual-5",
@@ -433,7 +442,8 @@
    },
    "score": 3.39,
    "phones": [],
-   "seller": null
+   "seller": null,
+   "link_kind": "search"
   },
   {
    "id": "manual-7",
@@ -471,7 +481,8 @@
    },
    "score": 1.49,
    "phones": [],
-   "seller": null
+   "seller": null,
+   "link_kind": "search"
   }
  ]
 }
