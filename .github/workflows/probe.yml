@@ -1,0 +1,24 @@
+name: Перевірка сайтів (службове)
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Завантажити сторінки
+        run: |
+          mkdir pages; i=0
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
+          for u in \
+            "https://dom.ria.com/uk/novostroyki/lvov/" \
+            "https://dom.ria.com/uk/novostroyki/lvov/?page=2" \
+            "https://dom.ria.com/uk/novostroyka-zhk-auroom-district-12312/" \
+            "https://dom.ria.com/uk/novostroyka-zhk-soul-park-12123/" ; do
+            i=$((i+1)); code=$(curl -sL --compressed -A "$UA" -H "Accept-Language: uk-UA,uk;q=0.9" -o pages/$i.html -w "%{http_code}" "$u"); echo "$i $code $(wc -c < pages/$i.html) $u" | tee -a pages/index.txt
+          done
+      - name: Зберегти в гілку probe-pages
+        run: |
+          cd pages && git init -q -b probe-pages && git add -A
+          git -c user.name=bot -c user.email=bot@users.noreply.github.com commit -qm probe
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" probe-pages
