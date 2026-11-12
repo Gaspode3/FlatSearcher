@@ -1,6 +1,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const STORE = "kvartyra-lviv-v1";
+  const uah = (usd) => (usd && data.usd_rate ? Math.round(usd * data.usd_rate / 1000) * 1000 : null);
   const fmt = (n) => (n == null ? "?" : Math.round(n).toLocaleString("uk-UA"));
   const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 
@@ -62,7 +63,7 @@
     const ppm = it.price_usd && it.area ? ` ($${fmt(it.price_usd / it.area)}/м²)` : "";
     return [
       `🏠 ${it.title || "Квартира"}`,
-      `💵 $${fmt(it.price_usd)}${ppm}`,
+      `💵 $${fmt(it.price_usd)}${ppm}${uah(it.price_usd) ? ` · ≈ ${fmt(uah(it.price_usd))} грн` : ""}`,
       `🛏 ${it.rooms || "?"} кімн. · ${it.area || "?"} м²${it.floor ? ` · ${it.floor}${it.floors ? "/" + it.floors : ""} пов.` : ""}`,
       it.district ? `📍 ${it.district}` : "",
       tags,
@@ -143,6 +144,8 @@
     // price
     node.querySelector(".price strong").textContent = `$${fmt(it.price_usd)}`;
     node.querySelector(".ppm").textContent = it.area ? `$${fmt(it.price_usd / it.area)}/м²` : "";
+    const u = uah(it.price_usd);
+    if (u) node.querySelector(".uah").textContent = `≈ ${fmt(u)} грн` + (it.area ? ` · ${fmt(u / it.area)} грн/м²` : "");
     const hist = it.price_history || [];
     if (hist.length > 1 && hist[0].usd > it.price_usd) node.querySelector(".price").append(el("span", "drop", `↓ було $${fmt(hist[0].usd)}`));
     node.querySelector(".title").textContent = it.title || "Квартира";
