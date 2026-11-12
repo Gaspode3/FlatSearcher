@@ -286,3 +286,12 @@ h1 { font-size: clamp(26px, 5vw, 38px); font-weight: 800; letter-spacing: -0.02e
   border: 2px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.deal { max-width: 1200px; margin: 14px auto 0; padding-inline: 16px; display: flex; gap: 8px; }
+.deal button {
+  flex: 1 1 0; max-width: 220px; border: 2px solid var(--line); background: var(--card); color: var(--ink);
+  padding: 10px 14px; font-weight: 800; font-size: 16px; border-radius: 14px;
+}
+.deal button.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+body[data-deal="rent"] .market, body[data-deal="rent"] .sale-only, body[data-deal="rent"] .complexes { display: none !important; }
+body[data-deal="sale"] .rent-only { display: none !important; }

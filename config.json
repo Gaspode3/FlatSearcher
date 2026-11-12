@@ -140,5 +140,61 @@
     "recheck_days": 5,
     "min_area_for_prefilter": 45,
     "plans_per_rooms": 12
+  },
+  "rent": {
+    "_comment": "Оренда: усе тут перекриває основні налаштування для запуску scrape.py --mode rent. Ціни — $ на місяць.",
+    "budget_usd": 650,
+    "max_price_usd": 750,
+    "min_price_usd": 100,
+    "rooms_min": 1,
+    "rooms_max": 10,
+    "default_rooms": "2+",
+    "notify_rooms_min": 2,
+    "notify_min_area_2rooms": 0,
+    "spacious_area_m2": 50,
+    "keep_inactive_days": 4,
+    "default_sources": [
+      "olx",
+      "domria",
+      "rieltor",
+      "mistechko"
+    ],
+    "olx": {
+      "category_id": 1760,
+      "mobile_path": "dolgosrochnaya-arenda-kvartir",
+      "passes": [
+        {
+          "rooms": [],
+          "pages": 10
+        }
+      ]
+    },
+    "domria": {
+      "html_pages": 3,
+      "enrich_per_run": 40,
+      "url_templates": [
+        "https://dom.ria.com/uk/arenda-kvartir/{slug}/",
+        "https://dom.ria.com/uk/arenda-kvartir/{slug}-2k/",
+        "https://dom.ria.com/uk/arenda-kvartir/{slug}-3k/"
+      ]
+    },
+    "rieltor": {
+      "path": "flats-rent",
+      "rooms": [
+        1,
+        2,
+        3
+      ],
+      "pages": 2,
+      "enrich_per_run": 30
+    },
+    "mistechko": {
+      "pages": 3,
+      "enrich_per_run": 30,
+      "url_templates": [
+        "https://mistechko.com/{slug}/orenda-kvartir/?lt=1&page={page}",
+        "https://mistechko.com/{slug}/orenda-kvartir/"
+      ]
+    }
   }
 }

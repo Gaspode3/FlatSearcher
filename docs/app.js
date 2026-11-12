@@ -28,16 +28,19 @@
     return !REJECTED.has(st);
   };
 
-  const filterIds = ["f-city", "f-rooms", "f-price", "f-area", "f-sort", "f-old", "f-repair", "f-owner", "f-budget", "f-fresh", "f-inactive"];
+  const filterIds = ["f-city", "f-rooms", "f-price", "f-area", "f-sort", "f-old", "f-repair", "f-owner", "f-budget", "f-fresh", "f-inactive", "f-pets", "f-nocomm", "f-power"];
   const saveFilters = () => {
     const f = {};
     filterIds.forEach((id) => { const e = $(id); f[id] = e.type === "checkbox" ? e.checked : e.value; });
-    try { localStorage.setItem(STORE + "-filters3", JSON.stringify(f)); } catch {}
+    try { localStorage.setItem(STORE + "-filters3" + (deal === "rent" ? "-rent" : ""), JSON.stringify(f)); } catch {}
   };
-  const readFilters = () => { try { return JSON.parse(localStorage.getItem(STORE + "-filters3") || "{}"); } catch { return {}; } };
+  const readFilters = () => { try { return JSON.parse(localStorage.getItem(STORE + "-filters3" + (deal === "rent" ? "-rent" : "")) || "{}"); } catch { return {}; } };
 
-  const cardLink = (it) => location.origin + location.pathname + "#id=" + encodeURIComponent(it.id);
-  const focusFromHash = () => { const m = location.hash.match(/^#id=(.+)$/); return m ? decodeURIComponent(m[1]) : null; };
+  let deal = /^#rent/.test(location.hash) ? "rent" : (() => { try { return localStorage.getItem(STORE + "-deal") || "sale"; } catch { return "sale"; } })();
+  if (/^#id=/.test(location.hash)) deal = "sale";
+  const cardLink = (it) => location.origin + location.pathname + (deal === "rent" ? "#rent&id=" : "#id=") + encodeURIComponent(it.id);
+  const focusFromHash = () => { const m = location.hash.match(/^#(?:rent&)?id=(.+)$/); return m ? decodeURIComponent(m[1]) : null; };
+  const perMonth = () => (deal === "rent" ? "/міс" : "");
   let focusId = focusFromHash();
   const copy = async (text, msg) => {
     try { await navigator.clipboard.writeText(text); toast(msg); }
@@ -85,7 +88,14 @@
     const f = it.flags || {};
     const b = [];
     if (f.old_fund) b.push(["🏛 Старий фонд", "good"]);
-    if (f.needs_repair) b.push(["🔨 Під ремонт", "good"]);
+    if (f.needs_repair && deal === "sale") b.push(["🔨 Під ремонт", "good"]);
+    if (deal === "rent") {
+      if (f.pets_ok) b.push(["🐾 Можна з тваринами", "good"]);
+      else if (f.no_pets) b.push(["🚫 Без тварин", "warn"]);
+      if (f.no_commission) b.push(["🙅 Без комісії", "good"]);
+      if (f.power) b.push(["🔋 Генератор / укриття", "good"]);
+      if (it.furnished) b.push(["🛋 " + it.furnished, ""]);
+    }
     if (f.owner) b.push(["👤 Власник", "good"]);
     if (it.verified) b.push(["✅ Перевірено DIM.RIA", "good"]);
     if (f.new_build && market === "new") {
@@ -107,7 +117,7 @@
     const ppm = it.price_usd && it.area ? ` ($${fmt(it.price_usd / it.area)}/м²)` : "";
     return [
       `🏠 ${it.title || "Квартира"}`,
-      `💵 $${fmt(it.price_usd)}${ppm}${uah(it.price_usd) ? ` · ≈ ${fmt(uah(it.price_usd))} грн` : ""}`,
+      `💵 $${fmt(it.price_usd)}${perMonth()}${deal === "rent" ? "" : ppm}${uah(it.price_usd) ? ` · ≈ ${fmt(uah(it.price_usd))} грн` : ""}`,
       `🛏 ${it.rooms || "?"} кімн. · ${it.area || "?"} м²${it.floor ? ` · ${it.floor}${it.floors ? "/" + it.floors : ""} пов.` : ""}`,
       it.district ? `📍 ${it.district}` : "",
       tags,
@@ -204,10 +214,11 @@
     if (!isSeen(it) && it.first_seen && daysAgo(it.first_seen) <= 2) node.querySelector(".newtag").hidden = false;
 
     // price
-    node.querySelector(".price strong").textContent = `$${fmt(it.price_usd)}`;
+    node.querySelector(".price strong").textContent = `$${fmt(it.price_usd)}${perMonth()}`;
     node.querySelector(".ppm").textContent = it.area ? `$${fmt(it.price_usd / it.area)}/м²` : "";
     const u = uah(it.price_usd);
-    if (u) node.querySelector(".uah").textContent = `≈ ${fmt(u)} грн` + (it.area ? ` · ${fmt(u / it.area)} грн/м²` : "");
+    if (u) node.querySelector(".uah").textContent = deal === "rent" ? `≈ ${fmt(u)} грн/міс` : `≈ ${fmt(u)} грн` + (it.area ? ` · ${fmt(u / it.area)} грн/м²` : "");
+    if (deal === "rent") node.querySelector(".ppm").textContent = "";
     const hist = it.price_history || [];
     if (hist.length > 1 && hist[0].usd > it.price_usd) node.querySelector(".price").append(el("span", "drop", `↓ було $${fmt(hist[0].usd)}`));
     node.querySelector(".title").textContent = it.title || "Квартира";
@@ -444,7 +455,7 @@
   }
   function renderComplexes() {
     const box = $("complexes");
-    box.hidden = market !== "new";
+    box.hidden = market !== "new" || deal === "rent";
     if (box.hidden) return;
     const city = $("f-city").value;
     const maxP = data.criteria?.max_price_usd || Infinity;
@@ -490,7 +501,12 @@
       if (!$("f-inactive").checked && it.active === false) return false;
       if (it.dup_of && data.items.some((x) => x.id === it.dup_of)) return false;
       if ($("f-fresh").checked && it.suspicious) return false;
-      if ((market === "new") !== !!f.new_build) return false;
+      if (deal === "sale" && (market === "new") !== !!f.new_build) return false;
+      if (deal === "rent") {
+        if ($("f-pets").checked && !f.pets_ok) return false;
+        if ($("f-nocomm").checked && !(f.no_commission || f.owner)) return false;
+        if ($("f-power").checked && !f.power) return false;
+      }
       return true;
     });
   }
@@ -548,58 +564,93 @@
     if (io && more.isConnected) io.observe(more);
   }
 
-  const clearFocus = () => { focusId = null; history.replaceState(null, "", location.pathname); };
+  const clearFocus = () => { focusId = null; history.replaceState(null, "", location.pathname + (deal === "rent" ? "#rent" : "")); };
   $("focus-clear").onclick = () => { clearFocus(); render(); };
-  window.addEventListener("hashchange", () => { focusId = focusFromHash(); render(); window.scrollTo({ top: 0 }); });
+
   document.querySelectorAll("#tabs button").forEach((b) => {
     b.onclick = () => { clearFocus(); tab = b.dataset.tab; try { localStorage.setItem(STORE + "-tab", tab); } catch {} render(); window.scrollTo({ top: 0 }); };
   });
 
-  async function load() {
-    try {
-      const files = ["data/listings.json", "data/listings-home.json"];
-      const parts = (await Promise.all(files.map((f) =>
-        fetch(f + "?ts=" + Date.now()).then((r) => (r.ok ? r.json() : null)).catch(() => null)))).filter(Boolean);
-      if (!parts.length) throw new Error("no data");
-      const byId = new Map();
-      for (const p of parts) for (const it of p.items || []) {
-        const prev = byId.get(it.id);
-        if (!prev || (it.last_seen || "") >= (prev.last_seen || "")) byId.set(it.id, it);
-      }
-      const cities = new Map();
-      parts.forEach((p) => (p.cities || []).forEach((c) => cities.set(c.key, c)));
-      data = {
-        ...parts[0],
-        items: [...byId.values()],
-        complexes: parts.flatMap((p) => p.complexes || []),
-        cities: [...cities.values()],
-        updated: parts.map((p) => p.updated).filter(Boolean).sort().pop(),
-        updated_home: parts[1]?.updated,
-        errors: parts.flatMap((p) => p.errors || []),
-      };
-    } catch {
-      $("meta").textContent = "Не вдалося завантажити дані.";
+  const datasets = {};
+  async function fetchDeal(d) {
+    const files = d === "rent" ? ["data/rent.json"] : ["data/listings.json", "data/listings-home.json"];
+    const parts = (await Promise.all(files.map((f) =>
+      fetch(f + "?ts=" + Date.now()).then((r) => (r.ok ? r.json() : null)).catch(() => null)))).filter(Boolean);
+    if (!parts.length) return null;
+    const byId = new Map();
+    for (const p of parts) for (const it of p.items || []) {
+      const prev = byId.get(it.id);
+      if (!prev || (it.last_seen || "") >= (prev.last_seen || "")) byId.set(it.id, it);
+    }
+    const cities = new Map();
+    parts.forEach((p) => (p.cities || []).forEach((c) => cities.set(c.key, c)));
+    return {
+      ...parts[0],
+      items: [...byId.values()],
+      complexes: parts.flatMap((p) => p.complexes || []),
+      cities: [...cities.values()],
+      updated: parts.map((p) => p.updated).filter(Boolean).sort().pop(),
+      updated_home: parts[1]?.updated,
+      errors: parts.flatMap((p) => p.errors || []),
+    };
+  }
+
+  let listenersOn = false;
+  async function showDeal(d) {
+    deal = d;
+    try { localStorage.setItem(STORE + "-deal", d); } catch {}
+    document.body.dataset.deal = d;
+    document.querySelectorAll("#deal button").forEach((b) => b.classList.toggle("active", b.dataset.deal === d));
+    if (!datasets[d]) {
+      $("list").replaceChildren();
+      $("count").replaceChildren(el("span", "spinner"), d === "rent" ? " Завантажую оренду…" : " Завантажую оголошення…");
+      datasets[d] = await fetchDeal(d);
+    }
+    if (!datasets[d]) {
+      $("meta").textContent = d === "rent" ? "Дані оренди ще не зібрані — вони з'являться після найближчого запуску збору." : "Не вдалося завантажити дані.";
+      $("count").textContent = "";
+      data = { items: [], complexes: [] };
       return;
     }
+    data = datasets[d];
     const upd = data.updated ? new Date(data.updated).toLocaleString("uk-UA", { dateStyle: "medium", timeStyle: "short" }) : "—";
     const c = data.criteria || {};
-    $("meta").textContent = `Бюджет $${fmt(c.budget_usd)} (показую до $${fmt(c.max_price_usd)}) · оновлено ${upd}`;
+    $("meta").textContent = d === "rent"
+      ? `Оренда · бюджет $${fmt(c.budget_usd)}/міс (показую до $${fmt(c.max_price_usd)}) · оновлено ${upd}`
+      : `Купівля · бюджет $${fmt(c.budget_usd)} (показую до $${fmt(c.max_price_usd)}) · оновлено ${upd}`;
     if (data.updated_home) $("meta").append(` · OLX і rieltor з домашнього ПК: ${new Date(data.updated_home).toLocaleString("uk-UA", { dateStyle: "medium", timeStyle: "short" })}`);
     if (data.errors && data.errors.length) $("meta").append(el("span", "err", ` · помилки збору: ${data.errors.join("; ")}`));
     $("f-price").placeholder = c.max_price_usd || "";
     const cities = data.cities && data.cities.length ? data.cities : [{ key: "lviv", name: "Львів" }];
     cityNames = Object.fromEntries(cities.map((x) => [x.key, x.name]));
     $("f-city").replaceChildren(...(cities.length > 1 ? [new Option("Усі міста", "")] : []), ...cities.map((x) => new Option(x.name, x.key)));
-    $("f-rooms").value = c.default_rooms || "3+";
     const saved = readFilters();
     filterIds.forEach((id) => {
       const e = $(id);
-      if (saved[id] !== undefined) { if (e.type === "checkbox") e.checked = saved[id]; else e.value = saved[id]; }
-      e.addEventListener(e.tagName === "INPUT" && e.type !== "checkbox" ? "input" : "change", render);
+      if (e.type === "checkbox") e.checked = !!saved[id];
+      else if (id === "f-rooms") e.value = saved[id] || c.default_rooms || "2+";
+      else if (id === "f-sort") e.value = saved[id] || "score";
+      else e.value = saved[id] || "";
+      if (!listenersOn) e.addEventListener(e.tagName === "INPUT" && e.type !== "checkbox" ? "input" : "change", render);
     });
-    if (!$("f-rooms").value) $("f-rooms").value = c.default_rooms || "3+";
+    listenersOn = true;
+    if (!$("f-rooms").value) $("f-rooms").value = c.default_rooms || "2+";
     if ($("f-city").selectedIndex < 0) $("f-city").selectedIndex = 0;
     render();
   }
-  load();
+  document.querySelectorAll("#deal button").forEach((b) => {
+    b.onclick = () => {
+      if (b.dataset.deal === deal) return;
+      focusId = null;
+      history.replaceState(null, "", location.pathname + (b.dataset.deal === "rent" ? "#rent" : ""));
+      showDeal(b.dataset.deal);
+      window.scrollTo({ top: 0 });
+    };
+  });
+  window.addEventListener("hashchange", () => {
+    const d = /^#rent/.test(location.hash) ? "rent" : /^#id=/.test(location.hash) ? "sale" : deal;
+    focusId = focusFromHash();
+    if (d !== deal) showDeal(d); else render();
+  });
+  showDeal(deal);
 })();

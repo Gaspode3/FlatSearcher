@@ -15,6 +15,11 @@
     <p class="meta" id="meta">Завантаження…</p>
   </header>
 
+  <nav class="deal" id="deal" aria-label="Купівля чи оренда">
+    <button data-deal="sale" class="active">🏠 Купівля</button>
+    <button data-deal="rent">🔑 Оренда</button>
+  </nav>
+
   <nav class="market" id="market" aria-label="Ринок">
     <button data-market="resale" class="active">🏚 Вторинка</button>
     <button data-market="new">🏗 Новобудови</button>
@@ -61,7 +66,10 @@
     </div>
     <div class="row chips">
       <label class="chip"><input type="checkbox" id="f-old"> 🏛 Старий фонд</label>
-      <label class="chip"><input type="checkbox" id="f-repair"> 🔨 Під ремонт</label>
+      <label class="chip sale-only"><input type="checkbox" id="f-repair"> 🔨 Під ремонт</label>
+      <label class="chip rent-only"><input type="checkbox" id="f-pets"> 🐾 Можна з тваринами</label>
+      <label class="chip rent-only"><input type="checkbox" id="f-nocomm"> 🙅 Без комісії</label>
+      <label class="chip rent-only"><input type="checkbox" id="f-power"> 🔋 Генератор / укриття</label>
       <label class="chip"><input type="checkbox" id="f-owner"> 👤 Власник</label>
       <label class="chip"><input type="checkbox" id="f-budget"> 💵 У бюджеті</label>
       <label class="chip"><input type="checkbox" id="f-fresh"> 🧹 Сховати сумнівні</label>

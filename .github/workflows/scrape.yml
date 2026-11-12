@@ -2,8 +2,15 @@ name: Пошук квартир
 
 on:
   schedule:
-    - cron: "17 5 * * *"   # щодня о 07:17 за Києвом (зимовий час)
-  workflow_dispatch:        # кнопка «Run workflow» для ручного запуску
+    - cron: "17 5 * * *"    # щодня о 07:17 за Києвом: купівля + оренда
+    - cron: "17 15 * * *"   # щодня о 17:17 за Києвом: лише оренда (вона змінюється швидше)
+  workflow_dispatch:         # кнопка «Run workflow» для ручного запуску
+    inputs:
+      what:
+        description: "Що збирати"
+        type: choice
+        options: [усе, купівля, оренда]
+        default: усе
 
 permissions:
   contents: write
@@ -16,7 +23,10 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 75
+    env:
+      DO_SALE: ${{ github.event_name == 'workflow_dispatch' && inputs.what != 'оренда' || github.event.schedule == '17 5 * * *' }}
+      DO_RENT: ${{ github.event_name == 'workflow_dispatch' && inputs.what != 'купівля' || github.event_name == 'schedule' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -27,23 +37,33 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Зібрати оголошення
+      - name: Купівля — зібрати оголошення
+        if: env.DO_SALE == 'true'
         env:
           DOMRIA_API_KEY: ${{ secrets.DOMRIA_API_KEY }}
         run: python scraper/scrape.py
+
+      - name: Оренда — зібрати оголошення
+        if: env.DO_RENT == 'true'
+        env:
+          DOMRIA_API_KEY: ${{ secrets.DOMRIA_API_KEY }}
+        run: python scraper/scrape.py --mode rent
 
       - name: Зберегти дані
         run: |
           git config user.name "kvartyra-bot"
           git config user.email "kvartyra-bot@users.noreply.github.com"
-          git add docs/data/listings.json docs/data/geocache.json 2>/dev/null || git add docs/data/listings.json
+          for f in docs/data/listings.json docs/data/rent.json docs/data/geocache.json; do [ -f "$f" ] && git add "$f"; done
           git diff --cached --quiet || git commit -m "Оновлення оголошень $(date -u +%F)"
-          git push
+          git pull --rebase -q && git push
 
       - name: Сповіщення про нові варіанти
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ -s new_listings.md ]; then
-            gh issue create --title "🏠 Нові квартири $(date +%d.%m)" --body-file new_listings.md
+            gh issue create --title "🏠 Купівля: нові квартири $(TZ=Europe/Kyiv date +%d.%m)" --body-file new_listings.md
+          fi
+          if [ -s new_rent.md ]; then
+            gh issue create --title "🔑 Оренда: нові квартири $(TZ=Europe/Kyiv date +%d.%m\ %H:%M)" --body-file new_rent.md
           fi
