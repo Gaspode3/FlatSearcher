@@ -106,4 +106,4 @@ OLX розбирається з JSON-стану сторінки (`window.__PRER
 
 - `scraper/query.py` — пошук із фільтрами (`search`), повна картка (`show`), стан бази (`stats`). Приклади — у `CLAUDE.md`.
 - Після кожного збору `query.py export` пише компактні списки: https://gaspode3.github.io/FlatSearcher/api/index.md
-- Оновити базу з чату: `gh workflow run scrape.yml -f what=усе` (або `купівля` / `оренда`).
+- Оновити базу з чату: `gh api -X POST repos/Gaspode3/FlatSearcher/actions/workflows/scrape.yml/dispatches -f ref=main -f "inputs[what]=усе"` (або `купівля` / `оренда`), або кнопка Run workflow в Actions.

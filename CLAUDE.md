@@ -31,10 +31,12 @@ python scraper/query.py show olx-939341144 ria-35100027         # повні к�
 ## Запустити оновлення бази з чату
 
 ```bash
-gh workflow run scrape.yml -f what=усе        # або купівля / оренда
-sleep 5; gh run list --workflow scrape.yml -L 1
-gh run watch <run-id> --exit-status             # ~15–40 хв; потім git pull і query.py
+R=repos/Gaspode3/FlatSearcher/actions
+gh api -X POST $R/workflows/scrape.yml/dispatches -f ref=main -f 'inputs[what]=усе'   # або купівля / оренда
+sleep 8; gh api "$R/workflows/scrape.yml/runs?per_page=1" --jq '.workflow_runs[0] | "\(.id) \(.status) \(.conclusion) \(.html_url)"'
+gh api $R/runs/<run-id> --jq '"\(.status) \(.conclusion)"'    # перевіряти раз на кілька хвилин; потім git pull і query.py
 ```
+У чатах `gh workflow run` / `gh run watch` не працюють (GraphQL закритий) — лише REST через `gh api`.
 Запуски не накладаються (concurrency: scrape). Оренда швидша за купівлю.
 
 ## Без репозиторію (лише веб)
