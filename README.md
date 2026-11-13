@@ -101,3 +101,9 @@ OLX розбирається з JSON-стану сторінки (`window.__PRER
 Його читають чати проєкту «пошук квартири»: https://gaspode3.github.io/FlatSearcher/data/shortlist.md
 
 Критерії словами — `criteria.md`, числа — `config.json` → `advisor`.
+
+### API для чату
+
+- `scraper/query.py` — пошук із фільтрами (`search`), повна картка (`show`), стан бази (`stats`). Приклади — у `CLAUDE.md`.
+- Після кожного збору `query.py export` пише компактні списки: https://gaspode3.github.io/FlatSearcher/api/index.md
+- Оновити базу з чату: `gh workflow run scrape.yml -f what=усе` (або `купівля` / `оренда`).
