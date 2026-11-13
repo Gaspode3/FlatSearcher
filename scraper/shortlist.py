@@ -4,7 +4,7 @@
 Цей файл читають чати проєкту «пошук квартири»:
 https://gaspode3.github.io/FlatSearcher/data/shortlist.md
 """
-import json, re, sys
+import json, math, re, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,18 +26,67 @@ def txt(i):
     return " ".join(str(i.get(k) or "") for k in ("title", "description", "building", "condition"))
 
 
-def sale_score(i):
-    """Повертає (бал, плюси, мінуси) або None, якщо не проходить жорсткі умови."""
+E = A.get("eoselia", {})
+OLD_STOCK = re.compile(r"2011-2020|200\d|19\d\d|хрущ|чешк|австрійськ|польськ", re.I)
+
+
+def money(x):
+    return f"${x:,.0f}".replace(",", " ")
+
+
+def months_to_repay(loan):
+    """Скільки місяців платити позику під rate при внеску monthly_usd."""
+    r, pay = E.get("rate", 0.07) / 12, E.get("monthly_usd", 1000)
+    if loan <= 0: return 0
+    if loan * r >= pay: return None
+    return math.ceil(-math.log(1 - loan * r / pay) / math.log(1 + r))
+
+
+def eoselia_plan(p):
+    """Внесок, кредит і строк за єОселею для ціни p (у доларах)."""
+    cash = E.get("cash_usd", 65000) - p * E.get("costs_pct", 0.025)
+    down = max(min(cash, p), p * E.get("down_min_pct", 0.2))
+    loan = max(p - down, 0)
+    return down, loan, months_to_repay(loan)
+
+
+def sale_score(i, track="cash"):
+    """Повертає (бал, плюси, мінуси) або None, якщо не проходить жорсткі умови.
+    track="cash" — вторинка за власні кошти; "eoselia" — новобудова під єОселю."""
     f = i.get("flags", {})
     r, a, p = i.get("rooms") or 0, i.get("area") or 0, i.get("price_usd") or 0
-    budget, hard_max = A.get("budget_usd", 65000), A.get("hard_max_usd", 72000)
-    if not p or p > hard_max or r < A.get("rooms_min", 2) or a < A.get("area_min", 55):
-        return None
-    if f.get("under_construction"):
-        return None
     t = txt(i)
     plus, minus, s = [], [], 50.0
-    if p <= budget:
+    if track == "eoselia":
+        budget, hard_max = E.get("price_target_usd", 95000), E.get("price_max_usd", 110000)
+        if not p or p > hard_max or r < A.get("rooms_min", 2) or a < A.get("area_min", 55):
+            return None
+        m2, m2max = (p / a if a else 0), E.get("m2_max_usd", 1210)
+        if m2 > m2max:
+            s -= 20; minus.append(f"${m2:.0f}/м² — понад ліміт єОселі (~${m2max}/м²)")
+        if a > E.get("area_max", 104):
+            s -= 20; minus.append(f"{a:g} м² — понад норму площі єОселі")
+        if OLD_STOCK.search(i.get("building") or "") or (i.get("year_built") and i["year_built"] < E.get("min_year", 2023)):
+            s -= 25; minus.append("будинок, схоже, старший за 3 роки — під єОселю не піде")
+        else:
+            minus.append("перевірити рік введення (для єОселі ≤3 роки)")
+        if f.get("under_construction"):
+            s -= 15; minus.append("ще будується — одразу не заїхати")
+        down, loan, m = eoselia_plan(p)
+        if m is None:
+            s -= 30; minus.append("кредит не вкладається в $1000/міс")
+        else:
+            s -= m / 6
+            plus.append(f"внесок {money(down)}, кредит {money(loan)} → ~{m} міс по $1000")
+    else:
+        budget, hard_max = A.get("budget_usd", 65000), A.get("hard_max_usd", 72000)
+        if not p or p > hard_max or r < A.get("rooms_min", 2) or a < A.get("area_min", 55):
+            return None
+        if f.get("under_construction"):
+            return None
+    if track == "eoselia":
+        pass
+    elif p <= budget:
         s += 10 + (budget - p) / 1000; plus.append(f"в бюджеті (${budget - p:,} запасу)".replace(",", " "))
     else:
         s -= (p - budget) / 500; minus.append(f"на ${p - budget:,} понад бюджет — торг".replace(",", " "))
@@ -130,6 +179,44 @@ def line(i, sc, mode):
     return "\n".join(out)
 
 
+def complex_rows(cxs):
+    """Плани в зведених/частково зведених ЖК, що вкладаються в ліміти єОселі."""
+    rows = []
+    for cx in cxs:
+        if re.search(r"апартамент", cx.get("name") or "", re.I):
+            continue
+        for pl in cx.get("plans") or []:
+            p, a, r = pl.get("price_usd") or 0, pl.get("area") or 0, pl.get("rooms") or 0
+            if not p or not a or r < A.get("rooms_min", 2) or a < A.get("area_min", 55):
+                continue
+            if p > E.get("price_max_usd", 110000) or p / a > E.get("m2_max_usd", 1210) * 1.1 or a > E.get("area_max", 104):
+                continue
+            down, loan, m = eoselia_plan(p)
+            if m is None:
+                continue
+            ready = cx.get("status") in ("ready", "partly")
+            rows.append((m + (0 if ready else 24), cx, pl, down, loan, m, ready))
+    rows.sort(key=lambda x: x[0])
+    seen, out = set(), []
+    for row in rows:
+        k = (row[1]["id"], row[2].get("rooms"))
+        if k in seen: continue
+        seen.add(k); out.append(row)
+    return out
+
+
+def complex_line(cx, pl, down, loan, m, ready):
+    st = {"ready": "зданий", "partly": "частково зданий", "building": "будується"}.get(cx.get("status"), cx.get("status") or "?")
+    inst = cx.get("installment") or {}
+    return "\n".join([
+        f"### {cx['name'].strip()} — {pl['rooms']}к {pl['area']:g} м² за {money(pl['price_usd'])} (${pl['price_usd']/pl['area']:.0f}/м²)",
+        f"- Забудовник: {cx.get('developer') or '—'}; {cx.get('street') or ''}; статус: {st}; здача: {pl.get('release') or cx.get('release') or '—'}; поверх {pl.get('floors') or '?'}/{pl.get('building_floors') or cx.get('floors_max') or '?'}",
+        f"- єОселя: внесок {money(down)}, кредит {money(loan)} → ~{m} міс по $1000"
+        + (f"; розтермінування {inst.get('months') or '?'} міс, перший внесок {inst.get('first_pct')}%" if inst else "")
+        + ("" if ready else "; ⚠ ще будується — жити одразу не вийде"),
+        f"- {cx.get('url')} · картка: {SITE}/#id={cx['id']}", ""])
+
+
 def load(path):
     p = ROOT / path
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"items": []}
@@ -150,7 +237,9 @@ def main():
     sale = load("docs/data/listings.json"); rent = load("docs/data/rent.json")
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     sec, sec_n = pick([i for i in sale["items"] if not i.get("flags", {}).get("new_build")], sale_score, A.get("top_sale", 15))
-    nb, nb_n = pick([i for i in sale["items"] if i.get("flags", {}).get("new_build")], sale_score, A.get("top_newbuild", 8))
+    nb, nb_n = pick([i for i in sale["items"] if i.get("flags", {}).get("new_build")],
+                    lambda i: sale_score(i, "eoselia"), A.get("top_newbuild", 10))
+    cx = complex_rows(sale.get("complexes") or [])
     rn, rn_n = pick(rent["items"], rent_score, A.get("top_rent", 12))
     md = [f"# Шортлист квартир (Львів) — {now}",
           "",
@@ -160,8 +249,11 @@ def main():
           "Бал — грубий фільтр, не вирок: читай плюси/мінуси й опис.", "",
           f"## Купівля — вторинка (топ {len(sec)} з {sec_n} відповідних)", ""]
     md += [line(i, sc, "sale") for _, i, sc in sec]
-    md += [f"## Купівля — новобудови, вже зведені (топ {len(nb)} з {nb_n})", ""]
+    md += [f"## Купівля — новобудови під єОселю (топ {len(nb)} з {nb_n})", "",
+           f"Розрахунок: власні ${E.get('cash_usd')} мінус ~{E.get('costs_pct', 0) * 100:g}% витрат на угоду, решта — кредит під {E.get('rate', 0) * 100:g}% з погашенням ${E.get('monthly_usd')}/міс.", ""]
     md += [line(i, sc, "sale") for _, i, sc in nb]
+    md += [f"## Новобудови від забудовників під єОселю (топ {min(len(cx), 12)} з {len(cx)} ЖК/типів)", ""]
+    md += [complex_line(c, pl, d, l, m, rd) for _, c, pl, d, l, m, rd in cx[:12]]
     md += [f"## Оренда (топ {len(rn)} з {rn_n})", ""]
     md += [line(i, sc, "rent") for _, i, sc in rn]
     out = ROOT / "docs/data/shortlist.md"

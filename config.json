@@ -6,7 +6,7 @@
   "default_rooms": "2+",
   "notify_rooms_min": 3,
   "budget_usd": 85000,
-  "max_price_usd": 90000,
+  "max_price_usd": 115000,
   "min_area_m2": 0,
   "spacious_area_m2": 60,
   "keep_inactive_days": 14,
@@ -212,6 +212,18 @@
       "rooms_min": 2,
       "need_pets": false,
       "skip_apartments": false
+    },
+    "eoselia": {
+      "cash_usd": 65000,
+      "costs_pct": 0.025,
+      "down_min_pct": 0.2,
+      "rate": 0.07,
+      "monthly_usd": 1000,
+      "price_target_usd": 95000,
+      "price_max_usd": 110000,
+      "m2_max_usd": 1210,
+      "area_max": 104,
+      "min_year": 2023
     }
   }
 }
