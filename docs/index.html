@@ -14,6 +14,12 @@
     <h1>Квартира у Львові</h1>
     <p class="meta" id="meta">Завантаження…</p>
   </header>
+  <form id="lock" class="lock" hidden>
+    <p>🔒 База зашифрована. Введіть пароль — на цьому пристрої він запам'ятається.</p>
+    <input id="lock-pw" type="password" autocomplete="current-password" placeholder="Пароль" required>
+    <button type="submit">Відкрити</button>
+    <p class="lock-err" id="lock-err" hidden>Пароль не підходить.</p>
+  </form>
 
   <nav class="deal" id="deal" aria-label="Купівля чи оренда">
     <button data-deal="sale" class="active">🏠 Купівля</button>

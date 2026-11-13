@@ -16,5 +16,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
+      - name: Розшифрувати базу
+        env:
+          FS_PASSWORD: ${{ secrets.FS_PASSWORD }}
+        run: python scraper/vault.py decrypt
       - name: Пробний збір
         run: python scraper/scrape.py --sources "${{ inputs.sources }}" --out /tmp/check.json --new /tmp/check.md --geocache /tmp/geo.json

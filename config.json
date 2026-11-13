@@ -5,7 +5,6 @@
   "rooms_max": 10,
   "default_rooms": "2+",
   "notify_rooms_min": 3,
-  "budget_usd": 70000,
   "max_price_usd": 85000,
   "min_area_m2": 0,
   "spacious_area_m2": 60,
@@ -41,8 +40,16 @@
       "mistechko": "lvov",
       "svitkvartyr": "lviv",
       "_center_comment": "center — площа Ринок (від неї рахуємо «до центру, км»); bbox — рамка для геокодування вулиць [захід, північ, схід, південь]",
-      "center": [49.8419, 24.0315],
-      "bbox": [23.85, 49.92, 24.17, 49.76]
+      "center": [
+        49.8419,
+        24.0315
+      ],
+      "bbox": [
+        23.85,
+        49.92,
+        24.17,
+        49.76
+      ]
     },
     {
       "key": "odesa",
@@ -149,7 +156,6 @@
   },
   "rent": {
     "_comment": "Оренда: усе тут перекриває основні налаштування для запуску scrape.py --mode rent. Ціни — $ на місяць.",
-    "budget_usd": 1200,
     "max_price_usd": 1250,
     "min_price_usd": 100,
     "rooms_min": 1,
@@ -203,38 +209,5 @@
       ]
     }
   },
-  "advisor": {
-    "budget_usd": 65000,
-    "hard_max_usd": 85000,
-    "_center_comment": "Ближче до центру: до near_km — плюс, від far_km — мінус far_penalty_per_km за кожен км понад",
-    "center_near_km": 2.5,
-    "center_far_km": 4,
-    "center_far_penalty_per_km": 5,
-    "rooms_min": 2,
-    "area_min": 55,
-    "not_livable_penalty": 15,
-    "top_sale": 15,
-    "top_newbuild": 8,
-    "top_rent": 12,
-    "rent": {
-      "budget_usd": 1200,
-      "hard_max_usd": 1250,
-      "rooms_min": 2,
-      "area_min": 60,
-      "need_pets": false,
-      "skip_apartments": false
-    },
-    "eoselia": {
-      "cash_usd": 65000,
-      "costs_pct": 0.025,
-      "down_min_pct": 0.2,
-      "rate": 0.07,
-      "monthly_usd": 1000,
-      "price_target_usd": 95000,
-      "price_max_usd": 110000,
-      "m2_max_usd": 1210,
-      "area_max": 104,
-      "min_year": 2023
-    }
-  }
+  "_private_comment": "Бюджети й критерії сім'ї (budget_usd, rent.budget_usd, advisor) — у зашифрованому private/config.json.enc. Розшифрувати: python scraper/vault.py decrypt (пароль — FS_PASSWORD)."
 }

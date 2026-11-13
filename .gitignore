@@ -1,3 +1,11 @@
 debug/
 __pycache__/
 new_listings.md
+# Відкриті (розшифровані) дані — лише локально; у репозиторії тільки *.enc
+docs/data/listings.json
+docs/data/listings-home.json
+docs/data/rent.json
+docs/data/shortlist.md
+private/*
+!private/*.enc
+.fs_password

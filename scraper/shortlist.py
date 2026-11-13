@@ -9,7 +9,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-CFG = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from vault import load_config  # noqa: E402
+CFG = load_config()  # config.json + private/config.json (зашифрований)
 A = CFG.get("advisor", {})
 SITE = CFG.get("site_url", "").rstrip("/")
 EXCLUDED = set(CFG.get("excluded_sources", []))  # ключі й назви джерел збігаються (svitkvartyr)
@@ -278,7 +280,7 @@ def main():
     rn, rn_n = pick(rent["items"], rent_score, A.get("top_rent", 12))
     md = [f"# Шортлист квартир (Львів) — {now}",
           "",
-          "Автоматичний відбір для обговорення з Claude. Критерії — `criteria.md` у репозиторії, числа — config.json → advisor.",
+          "Автоматичний відбір для обговорення з Claude. Критерії — private/criteria.md, числа — private/config.json → advisor (обидва зашифровані в репозиторії).",
           f"Дані: купівля оновлена {sale.get('updated')}, оренда {rent.get('updated')}. Курс ${sale.get('usd_rate')}.",
           f"Повні дані (усі поля, фото): {SITE}/data/listings.json і {SITE}/data/rent.json",
           "Бал — грубий фільтр, не вирок: читай плюси/мінуси й опис.", "",

@@ -655,11 +655,50 @@
     b.onclick = () => { clearFocus(); tab = b.dataset.tab; try { localStorage.setItem(STORE + "-tab", tab); } catch {} render(); window.scrollTo({ top: 0 }); };
   });
 
+  // --- Зашифрована база: *.enc = AES-256-GCM(gzip(JSON)), ключ = PBKDF2-SHA256(пароль, salt) (див. scraper/vault.py)
+  const PW_KEY = STORE + "-pw";
+  let pw = null;
+  try { pw = localStorage.getItem(PW_KEY); } catch {}
+  const keys = new Map();
+  const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const askPassword = (wrong) => {
+    $("lock").hidden = false;
+    $("lock-err").hidden = !wrong;
+    $("meta").textContent = "Потрібен пароль";
+    $("lock-pw").focus();
+  };
+  $("lock").addEventListener("submit", (e) => {
+    e.preventDefault();
+    try { localStorage.setItem(PW_KEY, $("lock-pw").value); } catch {}
+    location.reload();
+  });
+  async function deriveKey(salt, iter) {
+    const id = salt + ":" + iter;
+    if (!keys.has(id)) {
+      const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveKey"]);
+      keys.set(id, crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: b64(salt), iterations: iter },
+        base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]));
+    }
+    return keys.get(id);
+  }
+  class WrongPassword extends Error {}
+  async function fetchEnc(f) {
+    const r = await fetch(f + ".enc?ts=" + Date.now()).catch(() => null);
+    if (!r || !r.ok) return null;
+    if (!pw) throw new WrongPassword();
+    const env = await r.json();
+    let raw;
+    try {
+      raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(env.iv) }, await deriveKey(env.salt, env.iter), b64(env.ct));
+    } catch { throw new WrongPassword(); }
+    const text = await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+    return JSON.parse(text);
+  }
+
   const datasets = {};
   async function fetchDeal(d) {
     const files = d === "rent" ? ["data/rent.json"] : ["data/listings.json", "data/listings-home.json"];
-    const parts = (await Promise.all(files.map((f) =>
-      fetch(f + "?ts=" + Date.now()).then((r) => (r.ok ? r.json() : null)).catch(() => null)))).filter(Boolean);
+    const parts = (await Promise.all(files.map(fetchEnc))).filter(Boolean);
     if (!parts.length) return null;
     const byId = new Map();
     for (const p of parts) for (const it of p.items || []) {
@@ -688,7 +727,14 @@
     if (!datasets[d]) {
       $("list").replaceChildren();
       $("count").replaceChildren(el("span", "spinner"), d === "rent" ? " Завантажую оренду…" : " Завантажую оголошення…");
-      datasets[d] = await fetchDeal(d);
+      try { datasets[d] = await fetchDeal(d); }
+      catch (e) {
+        if (!(e instanceof WrongPassword)) throw e;
+        $("count").textContent = "";
+        try { if (pw) localStorage.removeItem(PW_KEY); } catch {}
+        askPassword(!!pw);
+        return;
+      }
     }
     if (!datasets[d]) {
       $("meta").textContent = d === "rent" ? "Дані оренди ще не зібрані — вони з'являться після найближчого запуску збору." : "Не вдалося завантажити дані.";

@@ -26,6 +26,9 @@ from typing import Any, Callable
 import requests
 from bs4 import BeautifulSoup
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from vault import load_config  # noqa: E402  (config.json + зашифровані приватні значення)
+
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.json"
 DATA_PATH = ROOT / "docs" / "data" / "listings.json"
@@ -1292,7 +1295,9 @@ def main() -> int:
     DATA_PATH = ROOT / args.out
     GEOCACHE_PATH = ROOT / args.geocache
     NEW_PATH = ROOT / args.new
-    CFG = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    CFG = load_config()
+    CFG.setdefault("budget_usd", CFG.get("max_price_usd"))
+    if "rent" in CFG: CFG["rent"].setdefault("budget_usd", CFG["rent"].get("max_price_usd"))
     if args.mode == "rent":
         CFG = deep_merge(CFG, CFG.get("rent", {}))
         if args.out == "docs/data/listings.json":

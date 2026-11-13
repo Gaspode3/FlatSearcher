@@ -2,11 +2,23 @@
 
 Сайт моніторингу квартир у Львові (купівля, оренда, новобудови): https://gaspode3.github.io/FlatSearcher/
 Дані збирає GitHub Actions (`.github/workflows/scrape.yml`): купівля+оренда щодня о 07:17, оренда ще о 17:17 (Київ).
-Критерії сім'ї словами — `criteria.md`, числами — `config.json` → `advisor`. Перед порадами читай `criteria.md`.
+
+## База зашифрована
+
+У репозиторії лише `docs/data/*.enc` і `private/*.enc` (AES-GCM, `scraper/vault.py`). Пароль — у документі проєкту
+«Пошук квартири» `claude/flatsearcher-api.md` (Projects → project_read). **Ніколи не пиши пароль у файли, що комітяться,
+у коміти, issue чи відповіді, якщо користувач не просить.** Локально — лише в `.fs_password` (у .gitignore).
+
+```bash
+printf '%s' '<пароль>' > .fs_password
+python scraper/vault.py check && python scraper/vault.py decrypt
+```
+Критерії сім'ї словами — `private/criteria.md`, числами — `private/config.json` → `advisor` (після decrypt). Перед порадами читай criteria.
+Змінив щось у `private/` → `python scraper/vault.py encrypt` і комітити лише `*.enc`.
 
 ## Підбір варіантів з чату — `scraper/query.py`
 
-Спершу онови дані: `git pull -q` (бот комітить нову базу після кожного збору).
+Спершу онови дані: `git pull -q --rebase` (query.py сам розшифрує свіжіші *.enc).
 
 ```bash
 python scraper/query.py stats                                   # коли оновлено, скільки активних, помилки збору
@@ -23,12 +35,12 @@ python scraper/query.py show olx-939341144 ria-35100027         # повні к�
 `--old-fund`, `--owner`, `--no-commission`, `--pets`, `--no-panel`, `--livable`, `--gas`, `--min-ceiling 3`,
 `--not-first`, `--not-last`, `--max-floor`, `--new-days N`, `--price-drop`, `--with-newbuilds`, `--inactive`,
 `--all` (не відкидати за жорсткими умовами advisor: бюджет, площа, хрущовки), `--sort score|price|-price|area|m2|km|new`,
-`--limit`, `--format json`. Без клону: `--remote` бере JSON із сайту.
+`--limit`, `--format json`. `--remote` — взяти зашифровану базу з сайту (теж потрібен пароль).
 
 Бал — грубий фільтр, не вирок. Для конкретної квартири роби `show` і аналізуй за схемою з інструкцій проєкту.
 Посилання на картку на сайті: `https://gaspode3.github.io/FlatSearcher/#id=<id>` (оренда — `#rent&id=<id>`).
 
-## Запустити оновлення бази з чату
+## Запустити оновлення бази з чату (потрібен доступ push)
 
 ```bash
 R=repos/Gaspode3/FlatSearcher/actions
@@ -37,8 +49,4 @@ sleep 8; gh api "$R/workflows/scrape.yml/runs?per_page=1" --jq '.workflow_runs[0
 gh api $R/runs/<run-id> --jq '"\(.status) \(.conclusion)"'    # перевіряти раз на кілька хвилин; потім git pull і query.py
 ```
 У чатах `gh workflow run` / `gh run watch` не працюють (GraphQL закритий) — лише REST через `gh api`.
-Запуски не накладаються (concurrency: scrape). Оренда швидша за купівлю.
-
-## Без репозиторію (лише веб)
-Компактні списки, що оновлюються з кожним збором: https://gaspode3.github.io/FlatSearcher/api/index.md
-(`api/sale.md`, `api/rent.md`, `api/newbuild.md`) і шортлист `data/shortlist.md`.
+Секрети репозиторію з чату недоступні. Запуски не накладаються (concurrency: scrape). Оренда швидша за купівлю.

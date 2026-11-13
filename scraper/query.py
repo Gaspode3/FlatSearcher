@@ -6,9 +6,9 @@
   python scraper/query.py search --text "австрійськ|польськ" --sort m2 --limit 30
   python scraper/query.py show olx-939341144          # повна картка
   python scraper/query.py stats                       # що в базі, коли оновлено
-  python scraper/query.py export                      # компактні списки в docs/api/ (для сайту)
 
-Дані беруться з docs/data/*.json; з --remote — з сайту (якщо локальних немає або вони старі).
+База в репозиторії зашифрована: query.py сам розшифровує її паролем із FS_PASSWORD або файлу .fs_password.
+--remote — завантажити зашифровану базу з сайту замість локальної.
 Бал — та сама оцінка, що в shortlist.py (критерії сім'ї з config.json → advisor).
 """
 import argparse, json, signal, math, re, sys, urllib.request
@@ -16,7 +16,8 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import shortlist as S  # noqa: E402  (оцінка й константи)
+import shortlist as S  # noqa: E402  (оцінка й константи; підтягує й приватний config)
+import vault  # noqa: E402
 
 ROOT, SITE, CFG = S.ROOT, S.SITE, S.CFG
 FILES = {"sale": "docs/data/listings.json", "rent": "docs/data/rent.json"}
@@ -27,12 +28,16 @@ FLAG_ICONS = {"old_fund": "🏛", "owner": "👤", "needs_repair": "🔨", "fres
 
 
 def load(mode, remote=False):
+    """База зашифрована (*.enc). Локально розшифровує сама (FS_PASSWORD або .fs_password); --remote — з сайту."""
     path = ROOT / FILES["sale" if mode == "newbuild" else mode]
-    if path.exists() and not remote:
-        return json.loads(path.read_text(encoding="utf-8"))
-    url = f"{SITE}/data/{Path(path).name}?ts={int(datetime.now().timestamp())}"
-    with urllib.request.urlopen(url, timeout=60) as r:
-        return json.loads(r.read().decode("utf-8"))
+    if remote:
+        url = f"{SITE}/data/{path.name}.enc?ts={int(datetime.now().timestamp())}"
+        with urllib.request.urlopen(url, timeout=60) as r:
+            return json.loads(vault.decrypt_bytes(r.read().decode("utf-8"), vault.password()))
+    enc = Path(str(path) + ".enc")
+    if not path.exists() or (enc.exists() and enc.stat().st_mtime > path.stat().st_mtime):
+        vault.decrypt_all(quiet=True)
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def km(i):
@@ -198,29 +203,6 @@ def cmd_stats(a):
               f"джерела {src} | помилки збору: {d.get('errors') or 'немає'} | сьогодні {today}")
 
 
-def cmd_export(a):
-    """Компактні списки для читання через веб (WebFetch): docs/api/*.md."""
-    out = ROOT / "docs/api"; out.mkdir(parents=True, exist_ok=True)
-    base = dict(text=None, exclude_text=None, new_days=None, inactive=False, with_newbuilds=False, max_price=None, min_price=None,
-                rooms=None, rooms_max=None, min_area=None, max_area=None, max_m2=None, max_km=None, not_first=False, not_last=False,
-                max_floor=None, district=None, old_fund=False, owner=False, no_commission=False, pets=False, no_panel=False,
-                livable=False, gas=False, min_ceiling=None, price_drop=False, all=False, sort="score", remote=False)
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    index = [f"# FlatSearcher API — {now}", "",
-             "Компактні списки актуальних оголошень, відсортовані за балом (критерії сім'ї з config.json → advisor). sale.md — усі активні з купівлі (бал «—» = поза жорсткими умовами), rent.md і newbuild.md — лише ті, що проходять критерії.",
-             "Повна картка й фільтри: клонувати репозиторій Gaspode3/FlatSearcher і запускати `python scraper/query.py` (див. CLAUDE.md).", ""]
-    for mode, name in (("sale", "sale"), ("rent", "rent"), ("newbuild", "newbuild")):
-        ns = argparse.Namespace(**{**base, "all": mode == "sale"}, mode=mode)  # купівля — усі, з балом; решта — за критеріями
-        data = load(mode)
-        rows = build_rows(data, mode, ns)
-        body = [f"# {name}: {len(rows)} варіантів · база {data.get('updated')} · курс {data.get('usd_rate')}", ""] + [short(r, mode) for r in rows]
-        (out / f"{name}.md").write_text("\n".join(body) + "\n", encoding="utf-8")
-        new = [r for r in rows if str(r["i"].get("first_seen"))[:10] >= (date.today() - timedelta(days=2)).isoformat()]
-        index.append(f"- {SITE}/api/{name}.md — {len(rows)} варіантів (нових за 3 дні: {len(new)})")
-    (out / "index.md").write_text("\n".join(index) + "\n", encoding="utf-8")
-    print("export →", out)
-
-
 def main():
     global ARGS
     if hasattr(signal, "SIGPIPE"): signal.signal(signal.SIGPIPE, signal.SIG_DFL)  # спокійно з | head
@@ -255,9 +237,8 @@ def main():
     sh = sp.add_parser("show", help="повна картка за id (можна кілька)")
     sh.add_argument("ids", nargs="+"); sh.add_argument("--photos", type=int, default=6)
     sp.add_parser("stats", help="стан бази")
-    sp.add_parser("export", help="компактні списки в docs/api/")
     ARGS = p.parse_args()
-    {"search": cmd_search, "show": cmd_show, "stats": cmd_stats, "export": cmd_export}[ARGS.cmd](ARGS)
+    {"search": cmd_search, "show": cmd_show, "stats": cmd_stats}[ARGS.cmd](ARGS)
 
 
 if __name__ == "__main__":
