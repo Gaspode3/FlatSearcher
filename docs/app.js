@@ -28,7 +28,7 @@
     return !REJECTED.has(st);
   };
 
-  const filterIds = ["f-city", "f-rooms", "f-price", "f-area", "f-sort", "f-old", "f-repair", "f-owner", "f-budget", "f-fresh", "f-nopanel", "f-inactive", "f-pets", "f-nocomm", "f-power"];
+  const filterIds = ["f-q", "f-city", "f-rooms", "f-price", "f-area", "f-km", "f-sort", "f-old", "f-repair", "f-owner", "f-budget", "f-fresh", "f-nopanel", "f-inactive", "f-pets", "f-nocomm", "f-power"];
   const saveFilters = () => {
     const f = {};
     filterIds.forEach((id) => { const e = $(id); f[id] = e.type === "checkbox" ? e.checked : e.value; });
@@ -131,6 +131,8 @@
     kv("Кімнат", it.rooms); kv("Площа, м²", it.area);
     kv("Поверх", it.floor ? `${it.floor}${it.floors ? " з " + it.floors : ""}` : null);
     kv("Місто", cityName(it.city)); kv("Район", it.district); kv("Адреса", it.address !== cityName(it.city) ? it.address : null);
+    kv("Вулиця (з оголошення)", it.street);
+    kv("До центру", it.center_km != null ? `~${it.center_km} км від пл. Ринок${it.geo_q ? " (орієнтовно, за вулицею)" : ""}` : null);
     kv("Будинок", it.building); kv("Рік побудови", it.year_built); kv("Стан / ремонт", it.condition); kv("Меблі", it.furnished);
     if (it.lat != null) kv("Координати", `${it.lat}, ${it.lon}${it.geo_approx ? " (приблизно)" : ""} — ${mapsLink(it)}`);
     kv("Позначки", Object.entries(f).filter(([, v]) => v).map(([k]) => FLAG_NAMES[k] || k));
@@ -315,6 +317,7 @@
       ["Поверх", it.floor ? `${it.floor}${it.floors ? " з " + it.floors : ""}` : null],
       ["Місто", cityName(it.city)],
       ["Район", it.district],
+      ["До центру", it.center_km != null ? `~${it.center_km} км${it.geo_q ? " (за вулицею)" : ""}` : null],
       ["Будинок", it.building],
       ["Опубліковано", it.published],
       ["Ціна в оголошенні", it.price_orig],
@@ -549,11 +552,21 @@
   const PANEL_TEXT = /панельн\S*\s+(будин|будівл|дім|дом)|панельк/i;
   const isPanel = (it) => /панел/i.test(it.building || "") || PANEL_TEXT.test(`${it.title || ""} ${it.description || ""}`);
 
+  // Пошук: усі слова запиту мають знайтися в назві/описі/адресі/вулиці/районі/будинку/id (регістр і апострофи не важливі)
+  const norm = (x) => String(x || "").toLowerCase().replace(/['’`ʼ]/g, "").replace(/ё/g, "е");
+  const haystack = (it) => norm([it.id, it.title, it.address, it.street, it.district, it.building, it.seller, it.description].join(" "));
+
   function filtered() {
+    const q = norm($("f-q").value).trim();
+    if (q) {
+      const words = q.split(/\s+/);
+      return data.items.filter((it) => words.every((w) => haystack(it).includes(w)));
+    }
     const rooms = $("f-rooms").value;
     const city = $("f-city").value;
     const maxP = Number($("f-price").value) || Infinity;
     const minA = Number($("f-area").value) || 0;
+    const maxKm = $("f-km").value === "" ? Infinity : Number($("f-km").value);
     const budget = data.criteria?.budget_usd || Infinity;
     return data.items.filter((it) => {
       const f = it.flags || {};
@@ -561,6 +574,7 @@
       if (city && (it.city || "lviv") !== city) return false;
       if ((it.price_usd || 0) > maxP) return false;
       if ((it.area || 0) < minA) return false;
+      if (maxKm < Infinity && !(it.center_km != null && it.center_km <= maxKm)) return false;
       if ($("f-old").checked && !f.old_fund) return false;
       if ($("f-repair").checked && !f.needs_repair) return false;
       if ($("f-owner").checked && !f.owner) return false;
@@ -597,6 +611,7 @@
       price: (a, b) => (a.price_usd || 0) - (b.price_usd || 0),
       ppm: (a, b) => ppm(a) - ppm(b),
       area: (a, b) => (b.area || 0) - (a.area || 0),
+      km: (a, b) => (a.center_km ?? Infinity) - (b.center_km ?? Infinity),
     };
     if (focusId && focusId.startsWith("zk-")) setMarket("new");
     else if (focusId) { const f = data.items.find((it) => it.id === focusId); if (f) setMarket(f.flags?.new_build ? "new" : "resale"); }
@@ -605,7 +620,8 @@
     const focused = focusId ? data.items.filter((it) => it.id === focusId) : [];
     $("focusbar").hidden = !focused.length && !(focusId && focusId.startsWith("zk-"));
     if (focusId && focusId.startsWith("zk-")) { $("list").replaceChildren(); $("count").textContent = ""; return; }
-    const items = focused.length ? focused : filtered().filter((it) => inTab(it, tab)).sort(sorters[$("f-sort").value] || sorters.score);
+    const searching = !!$("f-q").value.trim();  // пошук іде по всіх вкладках
+    const items = focused.length ? focused : filtered().filter((it) => searching || inTab(it, tab)).sort(sorters[$("f-sort").value] || sorters.score);
     $("count").textContent = `Знайдено ${items.length} з ${data.items.length}`;
     const list = $("list");
     list.replaceChildren();
@@ -698,6 +714,7 @@
       if (e.type === "checkbox") e.checked = !!saved[id];
       else if (id === "f-rooms") e.value = saved[id] || c.default_rooms || "2+";
       else if (id === "f-sort") e.value = saved[id] || "score";
+      else if (id === "f-q") e.value = "";  // пошук не запам'ятовуємо між візитами
       else e.value = saved[id] || "";
       if (!listenersOn) e.addEventListener(e.tagName === "INPUT" && e.type !== "checkbox" ? "input" : "change", render);
     });

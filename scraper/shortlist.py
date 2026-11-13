@@ -15,6 +15,7 @@ SITE = CFG.get("site_url", "").rstrip("/")
 EXCLUDED = set(CFG.get("excluded_sources", []))  # ключі й назви джерел збігаються (svitkvartyr)
 KHRUSH = re.compile(r"хрущ", re.I)
 PANEL = re.compile(r"панел", re.I)
+CEIL = re.compile(r"стел\w*[^0-9]{0,25}([23][.,]\d{1,2})", re.I)  # «висота стелі 3,4 м» — пріоритет: високі стелі
 
 NOT_LIVABLE = re.compile(r"під чистов|після будівельн|нульов|0-?й цикл|без ремонту|чорнов|стяжк", re.I)
 COMMERCIAL = re.compile(r"комерційн|нежитлов|апартамент", re.I)
@@ -51,6 +52,23 @@ def eoselia_plan(p):
     down = max(min(cash, p), p * E.get("down_min_pct", 0.2))
     loan = max(p - down, 0)
     return down, loan, months_to_repay(loan)
+
+
+def center(i, s, plus, minus, k=1.0):
+    """Ближче до центру. center_km рахує scrape.py за точними координатами або за вулицею з оголошення."""
+    km = i.get("center_km")
+    if km is None:
+        minus.append("відстань до центру невідома")
+        return s
+    near, far = A.get("center_near_km", 2.5), A.get("center_far_km", 4)
+    tag = f"~{km:g} км до центру" + (" (за вулицею)" if i.get("geo_q") else "")
+    if km <= near:
+        s += 8 * k; plus.append(tag)
+    elif km > far:
+        s -= (km - far) * A.get("center_far_penalty_per_km", 5) * k; minus.append(tag)
+    else:
+        plus.append(tag)
+    return s
 
 
 def sale_score(i, track="cash"):
@@ -100,7 +118,12 @@ def sale_score(i, track="cash"):
     s += min((a - 55) * 0.8, 20)
     if a >= 65: plus.append(f"{a:g} м²")
     if r >= 3: s += 10; plus.append(f"{r} кімнати")
-    if f.get("old_fund"): s += 8; plus.append("старий фонд (стелі, простір)")
+    if f.get("old_fund"): s += 12; plus.append("старий фонд (стелі, простір)")
+    ceil = CEIL.search(t)
+    if ceil:
+        h = float(ceil.group(1).replace(",", "."))
+        if h >= 3: s += 6; plus.append(f"стелі {h:g} м")
+        elif h < 2.7: s -= 3; minus.append(f"стелі {h:g} м")
     if f.get("owner"): s += 6; plus.append("від власника")
     if re.search(r"ізольован|окрем\w* кімнат|не ?прохідн", t, re.I): s += 4; plus.append("ізольовані кімнати")
     if GAS_IND.search(t): s += 4; plus.append("індивідуальне/газове опалення")
@@ -118,11 +141,13 @@ def sale_score(i, track="cash"):
     fl, fls = i.get("floor"), i.get("floors")
     if fl and fls:
         if fls <= 5 and fl >= 4 and not LIFT.search(t):
-            s -= 6; minus.append(f"{fl}/{fls} без ліфта — важко з візочком")
+            s -= 3; minus.append(f"{fl}/{fls} без ліфта — важко з візочком")
         if fl == 1:
-            s -= 3; minus.append("1 поверх")
+            minus.append("1 поверх (для нас ок, перевірити вологу)")
         if fl == fls and fls >= 5:
             s -= 2; minus.append("останній поверх")
+    if track != "eoselia":
+        s = center(i, s, plus, minus)
     fresh = i.get("fresh")
     if fresh is not None:
         s += (fresh - 60) / 5
@@ -152,6 +177,7 @@ def rent_score(i):
     if f.get("power"): s += 4; plus.append("є живлення при відключеннях")
     if f.get("no_pets") and R.get("need_pets"): s -= 15; minus.append("без тварин")
     if re.search(r"без діт|не для сімей з діт", txt(i), re.I): s -= 30; minus.append("без дітей")
+    s = center(i, s, plus, minus, k=0.5)
     fresh = i.get("fresh")
     if fresh is not None: s += (fresh - 60) / 5
     if i.get("suspicious"): minus.append("сумнівна свіжість")
@@ -170,13 +196,13 @@ def line(i, sc, mode):
     s, plus, minus = sc
     p = f"${i['price_usd']:,}".replace(",", " ") + ("/міс" if mode == "rent" else "")
     fl = f"{i.get('floor') or '?'}/{i.get('floors') or '?'}"
-    where = ", ".join(x for x in (i.get("district"), i.get("address")) if x and x != "Львів")[:70]
+    where = ", ".join(x for x in (i.get("district"), i.get("address") if i.get("address") != "Львів" else i.get("street")) if x)[:70]
     link = f"{SITE}/#{'rent&' if mode == 'rent' else ''}id={i['id']}"
     desc = re.sub(r"\s+", " ", i.get("description") or "")[:350]
     out = [f"### {i['id']} · бал {s} · {p} · {i.get('rooms')}к · {i.get('area') or '?'} м² · пов. {fl}",
            f"- {i.get('title', '')[:100]} — {where or '—'}",
            f"- Будинок: {i.get('building') or '—'}; стан: {i.get('condition') or '—'}; продавець: {i.get('seller') or '—'}; джерело: {i['source']}"
-           + (f" (також на {', '.join(i['also_on'])})" if i.get("also_on") else ""),
+           + (f" (також на {', '.join(x['source'] if isinstance(x, dict) else str(x) for x in i['also_on'])})" if i.get("also_on") else ""),
            f"- ➕ {'; '.join(plus) or '—'}",
            f"- ➖ {'; '.join(minus) or '—'}",
            f"- Свіжість {i.get('fresh')}/100; опубл. {i.get('published') or '?'}; вперше бачили {str(i.get('first_seen') or '')[:10]}"

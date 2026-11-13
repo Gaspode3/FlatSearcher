@@ -15,6 +15,7 @@ import datetime as dt
 import hashlib
 import html as htmllib
 import json
+import math
 import os
 import re
 import sys
@@ -1039,30 +1040,116 @@ def enrich(items: list[dict], cfg: dict, name: str, fn: Callable[[dict, str], No
     log(f"  {name}: відкрито сторінок оголошень {n}")
 
 
+# Вулиця з адреси / назви / опису: «вул. Коновальця», «вулиця Євгена Коновальця», «по вулиці Карла Мікльоша»,
+# «на вул. Науковій» (→ Наукова), «просп. Червоної Калини», «Івана Пулюя вул., 15».
+# «пл.»/«площа» не беремо: в описах це зазвичай «площа кухні», а не площа-вулиця
+_ST_KW = r"(?:вул(?:иц[яіюе])?|просп(?:ект[іу]?)?|пр-т|бульв(?:ар[іу]?)?|пров(?:ул(?:ок|ку))?)"
+_ST_WORD = r"[А-ЯІЇЄҐа-яіїєґ'’`][А-ЯІЇЄҐа-яіїєґ'’`-]+"
+_ST_BEFORE = re.compile(rf"(?<![а-яіїєґ]){_ST_KW}(?:\.\s*|\s+)((?:{_ST_WORD}\.?[ \t]*){{1,3}})(?:,?\s*(\d{{1,3}}[а-яa-z]?)(?!\d|\s*-?(?:х|ох)?\s*к(?:ім|iм|\b)))?", re.I)
+_ST_AFTER = re.compile(rf"((?:{_ST_WORD}[ \t]+){{1,3}})(?:вул|просп|бульв)\.,?\s*(\d{{1,3}}[а-яa-z]?)?(?!\d|\s*-?(?:х|ох)?\s*к(?:ім|iм|\b))", re.I)
+_ST_STOP = {
+    "львів", "львова", "львові", "м", "місто", "район", "р-н", "рн", "біля", "поруч", "поряд", "в", "у", "на", "з", "із", "та", "і",
+    "жк", "продаж", "продаю", "продається", "здаю", "здається", "оренда", "квартира", "квартири", "кв", "кімн", "кімнатна", "будинок",
+    "ближній", "центр", "центрі", "власник", "власника", "від", "без", "торг", "терміново", "новобудова", "ремонт", "ремонтом",
+    "левандівка", "сихів", "рясне", "рясне-1", "рясне-2", "збоїща", "підзамче", "клепарів", "кульпарків", "личаків", "майорівка",
+    "загальна", "площа", "житлова", "кухня", "поверх", "боднарівка", "бодна", "богданівка", "сигнівка", "голоско", "білогорща", "новий", "сокільники", "винники", "брюховичі", "кайзервальд",
+    "франківський", "галицький", "залізничний", "шевченківський", "личаківський", "сихівський",
+}
+
+
+def _clean_street(raw: str) -> str:
+    words = []
+    for w in re.split(r"\s+", raw.strip(" .,")):
+        w = w.strip(" .,'’`-")
+        if not w or w.lower() in _ST_STOP or (len(w) < 3 and words):
+            break
+        if words and words[0][:1].isupper() and w[:1].islower():
+            break  # «Дорошенка під бізнес» → «Дорошенка»
+        # «на вул. Науковій / Жовківській / Пластовій» → «Наукова / Жовківська / Пластова»
+        if len(w) > 5 and re.search(r"(?:[цс]ьк|[нв])ій$", w, re.I):
+            w = w[:-2] + "а"
+        words.append(w)
+    name = " ".join(words)
+    return name.title() if name.isupper() else name[:1].upper() + name[1:]
+
+
+def extract_street(it: dict, city_names) -> tuple[str, str | None]:
+    """(назва вулиці, номер будинку або None) — орієнтир для координат, якщо точних немає."""
+    addr = (it.get("address") or "").strip()
+    texts = [] if not addr or addr in city_names else [addr]
+    texts += [it.get("title") or "", (it.get("description") or "")[:400]]
+    for t in texts:
+        for rx in (_ST_BEFORE, _ST_AFTER):
+            for m in rx.finditer(t):
+                name = _clean_street(m.group(1))
+                if len(name) >= 4:
+                    return name, m.group(2)
+    return "", None
+
+
+def _km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    dy = (a[0] - b[0]) * 111.2
+    dx = (a[1] - b[1]) * 111.2 * math.cos(math.radians((a[0] + b[0]) / 2))
+    return math.hypot(dx, dy)
+
+
 def geocode(items: list[dict], cfg: dict) -> None:
-    """Координати за адресою через OpenStreetMap Nominatim (з кешем, ≤1 запит/с)."""
+    """Координати через OpenStreetMap Nominatim (з кешем, ≤1 запит/с) і відстань до центру.
+
+    Точні координати з джерела (без geo_approx) не чіпаємо. Інакше беремо вулицю (і номер будинку,
+    якщо є) з адреси, назви чи опису — це орієнтир до вулиці, а не до будинку."""
     cache = json.loads(GEOCACHE_PATH.read_text(encoding="utf-8")) if GEOCACHE_PATH.exists() else {}
-    city_names = {c["key"]: c["name"] for c in cfg["cities"]}
-    n = 0
+    cities = {c["key"]: c for c in cfg["cities"]}
+    city_names = {c["name"] for c in cfg["cities"]}
+    n, limit = 0, cfg.get("geocode_per_run", 60)
+
+    def lookup(q: str, city: dict):
+        nonlocal n
+        if q in cache:
+            return cache[q]
+        if n >= limit:
+            return "skip"
+        params = {"q": q, "format": "json", "limit": 1, "countrycodes": "ua", "accept-language": "uk"}
+        if city.get("bbox"):
+            params.update(viewbox=",".join(map(str, city["bbox"])), bounded=1)
+        res = get("https://nominatim.openstreetmap.org/search", as_json=True, tries=1, params=params,
+                  headers={"User-Agent": "FlatSearcher/1.0 (personal apartment search; github.com/Gaspode3/FlatSearcher)"})
+        n += 1
+        cache[q] = [float(res[0]["lat"]), float(res[0]["lon"])] if res else None
+        time.sleep(1.1)
+        return cache[q]
+
     for it in items:
-        if it.get("lat") or not passes(it, cfg):
+        if not passes(it, cfg):
             continue
-        addr = (it.get("address") or "").strip()
-        if not addr or addr in city_names.values():
-            continue
-        q = addr if city_names.get(it.get("city"), "") in addr else f"{addr}, {city_names.get(it.get('city'), '')}"
-        if q not in cache:
-            if n >= cfg.get("geocode_per_run", 60):
-                continue
-            res = get("https://nominatim.openstreetmap.org/search", as_json=True, tries=1,
-                      params={"q": q, "format": "json", "limit": 1, "countrycodes": "ua", "accept-language": "uk"},
-                      headers={"User-Agent": "FlatSearcher/1.0 (personal apartment search; github.com/Gaspode3/FlatSearcher)"})
-            n += 1
-            cache[q] = [float(res[0]["lat"]), float(res[0]["lon"])] if res else None
-            time.sleep(1.1)
-        if cache.get(q):
-            it["lat"], it["lon"] = cache[q]
-            it["geo_approx"] = True
+        city = cities.get(it.get("city") or "lviv", {})
+        cname = city.get("name", "")
+        exact = it.get("lat") is not None and not it.get("geo_approx")
+        if not exact:
+            street, house = extract_street(it, city_names)
+            if street:
+                it["street"] = street + (f", {house}" if house else "")
+                tries = ([f"вул. {street}, {house}, {cname}"] if house else []) + [f"вул. {street}, {cname}"]
+                if " " in street:  # «Вернадського Академіка» → «Вернадського»; «Генерала Чупринки» → «Чупринки»
+                    tries += [f"вул. {street.split()[0]}, {cname}", f"вул. {street.split()[-1]}, {cname}"]
+                for q in tries:
+                    res = lookup(q, city)
+                    if res == "skip":
+                        break
+                    if res:
+                        it["lat"], it["lon"], it["geo_approx"], it["geo_q"] = res[0], res[1], q != tries[0] or not house, q
+                        break
+            elif it.get("lat") is None:
+                addr = (it.get("address") or "").strip()
+                if addr and addr not in city_names:
+                    q = addr if cname in addr else f"{addr}, {cname}"
+                    res = lookup(q, city)
+                    if res and res != "skip":
+                        it["lat"], it["lon"], it["geo_approx"], it["geo_q"] = res[0], res[1], True, q
+        # Відстань до центру — лише якщо координати точні або взяті за вулицею (координати району з OLX — ні)
+        it.pop("center_km", None)
+        if city.get("center") and it.get("lat") is not None and (not it.get("geo_approx") or it.get("geo_q")):
+            it["center_km"] = round(_km((it["lat"], it["lon"]), tuple(city["center"])), 1)
     GEOCACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
     GEOCACHE_PATH.write_text(json.dumps(cache, ensure_ascii=False, indent=0), encoding="utf-8")
     log(f"  Геокодування: запитів {n}")

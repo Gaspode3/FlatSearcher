@@ -10,7 +10,7 @@
   "min_area_m2": 0,
   "spacious_area_m2": 60,
   "keep_inactive_days": 14,
-  "geocode_per_run": 60,
+  "geocode_per_run": 250,
   "default_sources": [
     "olx",
     "domria",
@@ -39,7 +39,10 @@
       },
       "rieltor": "lvov",
       "mistechko": "lvov",
-      "svitkvartyr": "lviv"
+      "svitkvartyr": "lviv",
+      "_center_comment": "center — площа Ринок (від неї рахуємо «до центру, км»); bbox — рамка для геокодування вулиць [захід, північ, схід, південь]",
+      "center": [49.8419, 24.0315],
+      "bbox": [23.85, 49.92, 24.17, 49.76]
     },
     {
       "key": "odesa",
@@ -203,6 +206,10 @@
   "advisor": {
     "budget_usd": 65000,
     "hard_max_usd": 72000,
+    "_center_comment": "Ближче до центру: до near_km — плюс, від far_km — мінус far_penalty_per_km за кожен км понад",
+    "center_near_km": 2.5,
+    "center_far_km": 4,
+    "center_far_penalty_per_km": 5,
     "rooms_min": 2,
     "area_min": 55,
     "not_livable_penalty": 15,

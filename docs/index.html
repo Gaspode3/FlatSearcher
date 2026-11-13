@@ -34,6 +34,9 @@
 
   <section class="filters" aria-label="Фільтри">
     <div class="row fields">
+      <label class="wide">Пошук <small>(шукає серед усіх оголошень, ігноруючи фільтри)</small>
+        <input id="f-q" type="search" placeholder="вулиця, ЖК, орієнтир (Магнус), слово з опису або id" autocomplete="off">
+      </label>
       <label id="city-wrap">Місто
         <select id="f-city"></select>
       </label>
@@ -54,6 +57,9 @@
       <label>Від, м²
         <input id="f-area" type="number" step="5" inputmode="numeric" placeholder="0">
       </label>
+      <label title="Від площі Ринок. Рахується за точними координатами або орієнтовно за вулицею з оголошення; без відомої відстані оголошення ховаються">До центру, км
+        <input id="f-km" type="number" step="0.5" min="0" inputmode="decimal" placeholder="будь-скільки">
+      </label>
       <label>Сортування
         <select id="f-sort">
           <option value="score">Найкращі збіги</option>
@@ -61,6 +67,7 @@
           <option value="price">Дешевші</option>
           <option value="ppm">Дешевший м²</option>
           <option value="area">Більша площа</option>
+          <option value="km">Ближче до центру</option>
         </select>
       </label>
     </div>

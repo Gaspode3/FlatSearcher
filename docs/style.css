@@ -57,6 +57,8 @@ h1 { font-size: clamp(26px, 5vw, 38px); font-weight: 800; letter-spacing: -0.02e
 .filters { margin-top: 14px; display: grid; gap: 10px; }
 .row { display: flex; flex-wrap: wrap; gap: 10px; }
 .fields label { flex: 0 1 170px; min-width: 140px; display: grid; gap: 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.fields label.wide { flex: 1 1 100%; }
+.fields label.wide small { font-weight: 400; }
 .fields select, .fields input {
   font: inherit; font-size: 15px; color: var(--ink); background: var(--card);
   border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; width: 100%;
