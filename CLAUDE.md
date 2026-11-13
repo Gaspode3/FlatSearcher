@@ -28,6 +28,7 @@ python scraper/query.py search --mode rent --max-price 650 --rooms 2 --new-days 
 python scraper/query.py search --mode newbuild                  # запасний варіант під єОселю
 python scraper/query.py search --text "австрійськ|польськ|сталінк" --all --sort m2
 python scraper/query.py show olx-939341144 ria-35100027         # повні картки: усі поля, опис, фото, історія ціни
+python scraper/query.py link olx-939341144 ria-35100027 -t "Топ до 80k"  # одне посилання на добірку (#list=…); оренда: --mode rent
 ```
 
 Фільтри `search`: `--mode sale|rent|newbuild`, `--max-price/--min-price`, `--rooms` (мінімум) / `--rooms-max`,

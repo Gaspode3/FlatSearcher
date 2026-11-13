@@ -209,6 +209,9 @@ h1 { font-size: clamp(26px, 5vw, 38px); font-weight: 800; letter-spacing: -0.02e
   font-weight: 600; font-size: 14px;
 }
 .focusbar[hidden] { display: none; }
+.focusbar [hidden] { display: none; }
+.focus-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.linkbtn { border: 0; background: none; color: var(--accent, inherit); font: inherit; font-weight: 600; text-decoration: underline; cursor: pointer; padding: 0; }
 .focusbar button { border: 0; background: var(--ink); color: var(--bg); border-radius: 999px; padding: 6px 12px; font-weight: 700; }
 .sheet-sub { margin: -4px 0 4px; color: var(--muted); font-size: 13px; }
 .sheet-box [hidden] { display: none; }
@@ -307,3 +310,6 @@ body[data-deal="sale"] .rent-only { display: none !important; }
 .lock button { font: inherit; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; cursor: pointer; }
 .lock p { margin: 0; }
 .lock-err { color: var(--bad); }
+
+/* Добірка за посиланням: ховаємо фільтри й вкладки, лишаємо лише обрані картки */
+body.picking .tabs, body.picking .market, body.picking .filters { display: none; }

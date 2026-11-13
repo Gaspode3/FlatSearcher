@@ -203,6 +203,16 @@ def cmd_stats(a):
               f"джерела {src} | помилки збору: {d.get('errors') or 'немає'} | сьогодні {today}")
 
 
+def cmd_link(a):
+    """Одне посилання на добірку: SITE/#list=id1,id2&t=Назва (оренда — #rent&list=)."""
+    from urllib.parse import quote
+    ids = [x.strip() for raw in a.ids for x in raw.split(",") if x.strip()]
+    url = f"{SITE}/#{'rent&' if a.mode == 'rent' else ''}list=" + ",".join(quote(x, safe="") for x in ids)
+    if a.title:
+        url += "&t=" + quote(a.title, safe="")
+    print(url)
+
+
 def main():
     global ARGS
     if hasattr(signal, "SIGPIPE"): signal.signal(signal.SIGPIPE, signal.SIG_DFL)  # спокійно з | head
@@ -237,8 +247,11 @@ def main():
     sh = sp.add_parser("show", help="повна картка за id (можна кілька)")
     sh.add_argument("ids", nargs="+"); sh.add_argument("--photos", type=int, default=6)
     sp.add_parser("stats", help="стан бази")
+    lk = sp.add_parser("link", help="одне посилання на добірку квартир")
+    lk.add_argument("ids", nargs="+"); lk.add_argument("--title", "-t", default="")
+    lk.add_argument("--mode", choices=["sale", "rent"], default="sale")
     ARGS = p.parse_args()
-    {"search": cmd_search, "show": cmd_show, "stats": cmd_stats}[ARGS.cmd](ARGS)
+    {"search": cmd_search, "show": cmd_show, "stats": cmd_stats, "link": cmd_link}[ARGS.cmd](ARGS)
 
 
 if __name__ == "__main__":

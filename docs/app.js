@@ -37,11 +37,21 @@
   const readFilters = () => { try { return JSON.parse(localStorage.getItem(STORE + "-filters3" + (deal === "rent" ? "-rent" : "")) || "{}"); } catch { return {}; } };
 
   let deal = /^#rent/.test(location.hash) ? "rent" : (() => { try { return localStorage.getItem(STORE + "-deal") || "sale"; } catch { return "sale"; } })();
-  if (/^#id=/.test(location.hash)) deal = "sale";
+  if (/^#(?:id|list)=/.test(location.hash)) deal = "sale";
   const cardLink = (it) => location.origin + location.pathname + (deal === "rent" ? "#rent&id=" : "#id=") + encodeURIComponent(it.id);
   const focusFromHash = () => { const m = location.hash.match(/^#(?:rent&)?id=(.+)$/); return m ? decodeURIComponent(m[1]) : null; };
   const perMonth = () => (deal === "rent" ? "/міс" : "");
   let focusId = focusFromHash();
+  // Добірка: #list=id1,id2,...&t=Назва (оренда — #rent&list=...)
+  const pickFromHash = () => {
+    const m = location.hash.match(/^#(?:rent&)?list=([^&]*)(?:&t=(.*))?$/);
+    if (!m) return null;
+    const ids = decodeURIComponent(m[1]).split(",").map((x) => x.trim()).filter(Boolean);
+    return ids.length ? { ids, title: m[2] ? decodeURIComponent(m[2]) : "" } : null;
+  };
+  let pick = pickFromHash();
+  const listLink = (ids, title) => location.origin + location.pathname + (deal === "rent" ? "#rent&list=" : "#list=")
+    + ids.map(encodeURIComponent).join(",") + (title ? "&t=" + encodeURIComponent(title) : "");
   const copy = async (text, msg) => {
     try { await navigator.clipboard.writeText(text); toast(msg); }
     catch { window.prompt("Скопіюйте:", text); }
@@ -613,16 +623,25 @@
       area: (a, b) => (b.area || 0) - (a.area || 0),
       km: (a, b) => (a.center_km ?? Infinity) - (b.center_km ?? Infinity),
     };
+    document.body.classList.toggle("picking", !!(pick && !focusId));
+    if (pick && !focusId) return renderPick();
     if (focusId && focusId.startsWith("zk-")) setMarket("new");
     else if (focusId) { const f = data.items.find((it) => it.id === focusId); if (f) setMarket(f.flags?.new_build ? "new" : "resale"); }
     document.querySelectorAll("#market button").forEach((b) => b.classList.toggle("active", b.dataset.market === market));
     renderComplexes();
     const focused = focusId ? data.items.filter((it) => it.id === focusId) : [];
+    $("focus-text").textContent = "Показано одне оголошення";
+    $("focus-share").hidden = true;
     $("focusbar").hidden = !focused.length && !(focusId && focusId.startsWith("zk-"));
     if (focusId && focusId.startsWith("zk-")) { $("list").replaceChildren(); $("count").textContent = ""; return; }
     const searching = !!$("f-q").value.trim();  // пошук іде по всіх вкладках
     const items = focused.length ? focused : filtered().filter((it) => searching || inTab(it, tab)).sort(sorters[$("f-sort").value] || sorters.score);
     $("count").textContent = `Знайдено ${items.length} з ${data.items.length}`;
+    if (items.length > 1) {
+      const sh = el("button", "linkbtn", "🔗 Поділитися цим списком");
+      sh.onclick = () => shareList(items.slice(0, 60).map((it) => it.id), "");
+      $("count").append(" · ", sh);
+    }
     const list = $("list");
     list.replaceChildren();
     if (!items.length) {
@@ -648,7 +667,31 @@
     if (io && more.isConnected) io.observe(more);
   }
 
-  const clearFocus = () => { focusId = null; history.replaceState(null, "", location.pathname + (deal === "rent" ? "#rent" : "")); };
+  function shareList(ids, title) {
+    const t = window.prompt(`Назва добірки (${ids.length} шт., можна лишити порожньою):`, title || "");
+    if (t === null) return;
+    const url = listLink(ids, t.trim());
+    if (navigator.share) navigator.share({ title: t.trim() || "Добірка квартир", url }).catch(() => copy(url, "Посилання на добірку скопійовано"));
+    else copy(url, "Посилання на добірку скопійовано");
+  }
+
+  const plural = (n, f) => f[n % 10 === 1 && n % 100 !== 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 1 : 2];
+  function renderPick() {
+    $("complexes").hidden = true;
+    const byId = new Map(data.items.map((it) => [it.id, it]));
+    const items = pick.ids.map((id) => byId.get(id)).filter(Boolean);
+    const missing = pick.ids.length - items.length;
+    $("focus-text").textContent = (pick.title ? `📋 ${pick.title} · ` : "📋 Добірка · ") + `${items.length} ${plural(items.length, deal === "rent" ? ["оголошення", "оголошення", "оголошень"] : ["квартира", "квартири", "квартир"])}`;
+    $("focus-share").hidden = false;
+    $("focusbar").hidden = false;
+    const gone = items.filter((it) => it.active === false).length;
+    $("count").textContent = [missing ? `${missing} уже немає в базі` : "", gone ? `${gone} зникли з сайтів` : ""].filter(Boolean).join(" · ");
+    const list = $("list");
+    list.replaceChildren(...(items.length ? items.map(buildCard) : [el("p", "empty", "Цих оголошень уже немає в базі.")]));
+  }
+  $("focus-share").onclick = () => { if (pick) shareList(pick.ids, pick.title); };
+
+  const clearFocus = () => { focusId = null; pick = null; history.replaceState(null, "", location.pathname + (deal === "rent" ? "#rent" : "")); };
   $("focus-clear").onclick = () => { clearFocus(); render(); };
 
   document.querySelectorAll("#tabs button").forEach((b) => {
@@ -772,15 +815,16 @@
   document.querySelectorAll("#deal button").forEach((b) => {
     b.onclick = () => {
       if (b.dataset.deal === deal) return;
-      focusId = null;
+      focusId = null; pick = null;
       history.replaceState(null, "", location.pathname + (b.dataset.deal === "rent" ? "#rent" : ""));
       showDeal(b.dataset.deal);
       window.scrollTo({ top: 0 });
     };
   });
   window.addEventListener("hashchange", () => {
-    const d = /^#rent/.test(location.hash) ? "rent" : /^#id=/.test(location.hash) ? "sale" : deal;
+    const d = /^#rent/.test(location.hash) ? "rent" : /^#(?:id|list)=/.test(location.hash) ? "sale" : deal;
     focusId = focusFromHash();
+    pick = pickFromHash();
     if (d !== deal) showDeal(d); else render();
   });
   showDeal(deal);
