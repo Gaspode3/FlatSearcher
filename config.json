@@ -16,8 +16,11 @@
     "domria",
     "rieltor",
     "mistechko",
-    "svitkvartyr",
     "newbuilds"
+  ],
+  "_excluded_comment": "Джерела, які повністю прибираємо з сайту й шортлиста (svitkvartyr: номери не відповідають, більшість оголошень неактуальні). Щоб повернути — приберіть звідси й додайте в default_sources.",
+  "excluded_sources": [
+    "svitkvartyr"
   ],
   "cities": [
     {

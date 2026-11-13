@@ -1261,6 +1261,11 @@ def main() -> int:
         log("  ! геокодування:", e)
 
     by_id = {it["id"]: it for it in existing.get("items", [])}
+    # Вимкнені джерела (excluded_sources) прибираємо з даних повністю, а не тримаємо як «зниклі»
+    excluded = {SOURCES[k][0] for k in CFG.get("excluded_sources", []) if k in SOURCES}
+    if excluded:
+        by_id = {k: v for k, v in by_id.items() if v.get("source") not in excluded}
+        scraped = [it for it in scraped if it.get("source") not in excluded]
     # Оголошення OLX і rieltor «належать» домашньому ПК, щойно з'явиться його файл даних
     home_file = ROOT / "docs" / "data" / "listings-home.json"
     if not args.home and args.mode == "sale" and home_file.exists():

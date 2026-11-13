@@ -12,6 +12,9 @@ ROOT = Path(__file__).resolve().parent.parent
 CFG = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
 A = CFG.get("advisor", {})
 SITE = CFG.get("site_url", "").rstrip("/")
+EXCLUDED = set(CFG.get("excluded_sources", []))  # ключі й назви джерел збігаються (svitkvartyr)
+KHRUSH = re.compile(r"хрущ", re.I)
+PANEL = re.compile(r"панел", re.I)
 
 NOT_LIVABLE = re.compile(r"під чистов|після будівельн|нульов|0-?й цикл|без ремонту|чорнов|стяжк", re.I)
 COMMERCIAL = re.compile(r"комерційн|нежитлов|апартамент", re.I)
@@ -84,6 +87,10 @@ def sale_score(i, track="cash"):
             return None
         if f.get("under_construction"):
             return None
+        if KHRUSH.search(i.get("building") or "") or KHRUSH.search(t):
+            return None  # «що завгодно, тільки не хрущовки»
+        if PANEL.search(i.get("building") or ""):
+            s -= 10; minus.append("панельний будинок")
     if track == "eoselia":
         pass
     elif p <= budget:
@@ -225,7 +232,7 @@ def load(path):
 def pick(items, fn, n):
     rows = []
     for i in items:
-        if not i.get("active", True) or i.get("dup_of") or i.get("source") == "Вручну":
+        if not i.get("active", True) or i.get("dup_of") or i.get("source") == "Вручну" or i.get("source") in EXCLUDED:
             continue
         sc = fn(i)
         if sc: rows.append((sc[0], i, sc))

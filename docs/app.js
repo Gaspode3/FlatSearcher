@@ -28,7 +28,7 @@
     return !REJECTED.has(st);
   };
 
-  const filterIds = ["f-city", "f-rooms", "f-price", "f-area", "f-sort", "f-old", "f-repair", "f-owner", "f-budget", "f-fresh", "f-inactive", "f-pets", "f-nocomm", "f-power"];
+  const filterIds = ["f-city", "f-rooms", "f-price", "f-area", "f-sort", "f-old", "f-repair", "f-owner", "f-budget", "f-fresh", "f-nopanel", "f-inactive", "f-pets", "f-nocomm", "f-power"];
   const saveFilters = () => {
     const f = {};
     filterIds.forEach((id) => { const e = $(id); f[id] = e.type === "checkbox" ? e.checked : e.value; });
@@ -544,6 +544,11 @@
   document.querySelectorAll("#market button").forEach((b) => { b.onclick = () => { clearFocus(); setMarket(b.dataset.market); render(); }; });
 
   // ---------- list
+  // Панельний будинок: поле «Будинок» (OLX/DOM.RIA пишуть «Панельний») або явна згадка в назві/описі.
+  // «Сонячні панелі» тощо не чіпаємо — шукаємо лише «панельн… будинок» / «панельк…».
+  const PANEL_TEXT = /панельн\S*\s+(будин|будівл|дім|дом)|панельк/i;
+  const isPanel = (it) => /панел/i.test(it.building || "") || PANEL_TEXT.test(`${it.title || ""} ${it.description || ""}`);
+
   function filtered() {
     const rooms = $("f-rooms").value;
     const city = $("f-city").value;
@@ -563,6 +568,7 @@
       if (!$("f-inactive").checked && it.active === false) return false;
       if (it.dup_of && data.items.some((x) => x.id === it.dup_of)) return false;
       if ($("f-fresh").checked && it.suspicious) return false;
+      if ($("f-nopanel").checked && isPanel(it)) return false;
       if (deal === "sale" && (market === "new") !== !!f.new_build) return false;
       if (deal === "rent") {
         if ($("f-pets").checked && !f.pets_ok) return false;
