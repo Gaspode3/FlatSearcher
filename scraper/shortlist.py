@@ -249,13 +249,13 @@ def main():
           "Бал — грубий фільтр, не вирок: читай плюси/мінуси й опис.", "",
           f"## Купівля — вторинка (топ {len(sec)} з {sec_n} відповідних)", ""]
     md += [line(i, sc, "sale") for _, i, sc in sec]
-    md += [f"## Купівля — новобудови під єОселю (топ {len(nb)} з {nb_n})", "",
-           f"Розрахунок: власні ${E.get('cash_usd')} мінус ~{E.get('costs_pct', 0) * 100:g}% витрат на угоду, решта — кредит під {E.get('rate', 0) * 100:g}% з погашенням ${E.get('monthly_usd')}/міс.", ""]
-    md += [line(i, sc, "sale") for _, i, sc in nb]
-    md += [f"## Новобудови від забудовників під єОселю (топ {min(len(cx), 12)} з {len(cx)} ЖК/типів)", ""]
-    md += [complex_line(c, pl, d, l, m, rd) for _, c, pl, d, l, m, rd in cx[:12]]
     md += [f"## Оренда (топ {len(rn)} з {rn_n})", ""]
     md += [line(i, sc, "rent") for _, i, sc in rn]
+    md += [f"## Запасний варіант — новобудови під єОселю (топ {len(nb)} з {nb_n})", "",
+           f"Розрахунок: власні ${E.get('cash_usd')} мінус ~{E.get('costs_pct', 0) * 100:g}% витрат на угоду, решта — кредит під {E.get('rate', 0) * 100:g}% з погашенням ${E.get('monthly_usd')}/міс.", ""]
+    md += [line(i, sc, "sale") for _, i, sc in nb]
+    md += [f"## Запасний варіант — плани від забудовників під єОселю (топ {min(len(cx), 12)} з {len(cx)} ЖК/типів)", ""]
+    md += [complex_line(c, pl, d, l, m, rd) for _, c, pl, d, l, m, rd in cx[:12]]
     out = ROOT / "docs/data/shortlist.md"
     out.write_text("\n".join(md), encoding="utf-8")
     print(f"shortlist: вторинка {sec_n}, новобудови {nb_n}, оренда {rn_n} → {out}")
