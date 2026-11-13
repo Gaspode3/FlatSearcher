@@ -295,3 +295,5 @@ h1 { font-size: clamp(26px, 5vw, 38px); font-weight: 800; letter-spacing: -0.02e
 .deal button.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 body[data-deal="rent"] .market, body[data-deal="rent"] .sale-only, body[data-deal="rent"] .complexes { display: none !important; }
 body[data-deal="sale"] .rent-only { display: none !important; }
+
+.btn.claude { flex: 0 0 46px; }

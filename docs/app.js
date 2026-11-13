@@ -111,6 +111,66 @@
     return b;
   };
 
+  // ---------- досьє для чату з Claude: усе, що зібрано про оголошення
+  const FLAG_NAMES = {
+    old_fund: "старий фонд", needs_repair: "під ремонт / старий ремонт", fresh_renovation: "свіжий ремонт", owner: "від власника",
+    apartments: "АПАРТАМЕНТИ (можливо нежитловий статус)", under_construction: "будується / переуступка", spacious: "простора",
+    over_budget: "вище бюджету", new_build: "новобудова", ready: "здано", pets_ok: "можна з тваринами", no_pets: "без тварин",
+    no_commission: "без комісії", power: "генератор / укриття",
+  };
+  const dossier = (it) => {
+    const f = it.flags || {};
+    const L = [];
+    const kv = (k, v) => { if (v != null && v !== "" && !(Array.isArray(v) && !v.length)) L.push(`- ${k}: ${Array.isArray(v) ? v.join(", ") : v}`); };
+    L.push(`## Квартира #${it.id} (${deal === "rent" ? "оренда" : "купівля"})`, "");
+    kv("Назва", it.title);
+    kv("Ціна", `$${fmt(it.price_usd)}${perMonth()}${uah(it.price_usd) ? ` (≈ ${fmt(uah(it.price_usd))} грн за курсом НБУ ${data.usd_rate})` : ""}${it.area && deal !== "rent" ? `, $${fmt(it.price_usd / it.area)}/м²` : ""}`);
+    kv("Ціна в оголошенні", it.price_orig);
+    const h = it.price_history || [];
+    if (h.length > 1) kv("Історія ціни", h.map((x) => `${x.date}: $${fmt(x.usd)}`));
+    kv("Кімнат", it.rooms); kv("Площа, м²", it.area);
+    kv("Поверх", it.floor ? `${it.floor}${it.floors ? " з " + it.floors : ""}` : null);
+    kv("Місто", cityName(it.city)); kv("Район", it.district); kv("Адреса", it.address !== cityName(it.city) ? it.address : null);
+    kv("Будинок", it.building); kv("Рік побудови", it.year_built); kv("Стан / ремонт", it.condition); kv("Меблі", it.furnished);
+    if (it.lat != null) kv("Координати", `${it.lat}, ${it.lon}${it.geo_approx ? " (приблизно)" : ""} — ${mapsLink(it)}`);
+    kv("Позначки", Object.entries(f).filter(([, v]) => v).map(([k]) => FLAG_NAMES[k] || k));
+    kv("Продавець", it.seller); kv("Телефони", it.phones);
+    kv("Перевірено DIM.RIA", it.verified ? "так" : null);
+    kv("Свіжість", it.fresh != null ? `${it.fresh}/100${(it.fresh_why || []).length ? " — " + it.fresh_why.join("; ") : ""}` : null);
+    kv("Опубліковано", it.published); kv("Оновлено на сайті", it.updated); kv("Знайдено нами", it.first_seen); kv("Востаннє бачили", it.last_seen);
+    if (it.active === false) kv("Статус", "зникло з сайту (можливо продано/здано)");
+    kv("Джерело", `${it.source}: ${it.url}`);
+    kv("Також на", (it.also_on || []).map((x) => `${x.source}: ${x.url}`));
+    kv("Наша картка", cardLink(it));
+    const m = mine[it.id] || {};
+    kv("Мій статус", m.status); kv("Моя нотатка", m.note); kv("В обраних", m.fav ? "так" : null);
+    if (it.description) L.push("", "### Опис з оголошення", it.description);
+    if ((it.photos || []).length) L.push("", `### Фото (${it.photos.length})`, ...it.photos.map((u) => `- ${u}`));
+    return L.join("\n");
+  };
+  const cxDossier = (cx) => {
+    const L = [`## ${/^ЖК/i.test(cx.name) ? "" : "ЖК "}${cx.name} #${cx.id} (новобудова)`, ""];
+    const kv = (k, v) => { if (v != null && v !== "") L.push(`- ${k}: ${v}`); };
+    kv("Забудовник", cx.developer); kv("Адреса", cx.street); kv("Місто", cityName(cx.city));
+    if (cx.lat != null) kv("Координати", `${cx.lat}, ${cx.lon} — ${mapsLink(cx)}`);
+    kv("Стан", (STATUS[cx.status] || [cx.status])[0] + (cx.status === "partly" ? ` (${cx.ready_sections} з ${cx.ready_sections + cx.building_sections} секцій)` : ""));
+    kv("Здача", cx.release); kv("Поверховість", cx.floors_max || cx.floors_max_cat);
+    kv("Ціна за м²", cx.price_m2_usd ? `від $${fmt(cx.price_m2_usd)}` : null);
+    kv("Квартир у продажу", cx.available);
+    if (cx.installment) kv("Розтермінування", `${cx.installment.months ? "до " + cx.installment.months + " міс." : "так"}${cx.installment.first_pct ? ", перший внесок від " + cx.installment.first_pct + "%" : ""}`);
+    kv("Кредит банку", cx.credit ? "так" : null); kv("Житловий ваучер", cx.voucher ? "так" : null); kv("Акція", cx.promo);
+    for (const [r, x] of Object.entries(cx.rooms || {})) kv(`${r}${r === "4" ? "+" : ""} кімн.`, `від $${fmt(x.from_usd)}, ${x.area_min}–${x.area_max} м², ${x.plans} планувань`);
+    kv("Сторінка ЖК", cx.url); kv("Наша картка", cardLink(cx));
+    if (cx.promo_text) L.push("", "### Опис", cx.promo_text);
+    if ((cx.plans || []).length) {
+      L.push("", "### Планування в продажу");
+      for (const p of cx.plans) L.push(`- ${p.rooms} кімн., ${p.area} м², $${fmt(p.price_usd)} ($${fmt(p.m2_usd)}/м²), поверхи ${p.floors || "?"}${p.building_floors ? " з " + p.building_floors : ""}${p.release ? ", здача " + p.release : ""}${p.photo ? " — план: " + p.photo : ""}`);
+    }
+    if ((cx.photos || []).length) L.push("", "### Фото", ...cx.photos.map((u) => `- ${u}`));
+    return L.join("\n");
+  };
+  const toClaude = (text) => copy("Ось квартира, яку я розглядаю. Що думаєш?\n\n" + text, "Скопійовано — встав у чат з Claude");
+
   const shareText = (it) => {
     const f = it.flags || {};
     const tags = [f.old_fund && "🏛 старий фонд", f.needs_repair && "🔨 під ремонт", f.owner && "👤 від власника"].filter(Boolean).join(", ");
@@ -312,6 +372,7 @@
     if (it.link_kind === "building") open.textContent = "Будинок";
     open.onclick = () => { setMine(it.id, { seen: true }); seenBtn.classList.add("on"); updateCounts(); };
     node.querySelector(".share").onclick = () => share(it);
+    node.querySelector(".claude").onclick = () => toClaude(dossier(it));
     const seenBtn = node.querySelector(".seen");
     if (isSeen(it)) seenBtn.classList.add("on");
     seenBtn.onclick = () => {
@@ -451,6 +512,7 @@
     const open = node.querySelector(".open");
     open.href = cx.url; open.textContent = "Відкрити ЖК";
     node.querySelector(".share").onclick = () => share(cx, cxShareText(cx));
+    node.querySelector(".claude").onclick = () => toClaude(cxDossier(cx));
     return node;
   }
   function renderComplexes() {
