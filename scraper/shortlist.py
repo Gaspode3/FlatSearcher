@@ -163,16 +163,18 @@ def rent_score(i):
     r, a, p = i.get("rooms") or 0, i.get("area") or 0, i.get("price_usd") or 0
     R = A.get("rent", {})
     budget = R.get("budget_usd", 650)
-    if not p or p > R.get("hard_max_usd", 700) or r < R.get("rooms_min", 2):
+    if not p or p > R.get("hard_max_usd", 700) or r < R.get("rooms_min", 2) or (a and a < R.get("area_min", 0)):
         return None
     if f.get("apartments") and R.get("skip_apartments"):
         return None
     plus, minus, s = [], [], 50.0
-    if p <= budget: s += 8 + (budget - p) / 25; plus.append(f"${p}/міс")
+    if p <= budget: s += 8 + min((budget - p) / 50, 8); plus.append(f"${p}/міс")
     else: s -= (p - budget) / 10; minus.append(f"${p - budget} понад бюджет")
-    if a: s += min((a - 45) * 0.6, 18)
-    if a >= 60: plus.append(f"{a:g} м²")
-    if r >= 3: s += 8; plus.append(f"{r} кімнати")
+    # головне для оренди — простір (завезти всі речі): площа важить більше за ціну
+    if a: s += min((a - 50) * 0.7, 35)
+    if a >= 70: plus.append(f"{a:g} м²")
+    if r >= 3: s += 10; plus.append(f"{r} кімнати")
+    if re.search(r"комор|гардероб|підвал|горищ|кладов|антресол", txt(i), re.I): s += 4; plus.append("є комора/підвал/гардероб")
     if f.get("owner") or f.get("no_commission"): s += 6; plus.append("без комісії/від власника")
     if f.get("power"): s += 4; plus.append("є живлення при відключеннях")
     if f.get("no_pets") and R.get("need_pets"): s -= 15; minus.append("без тварин")
