@@ -225,6 +225,8 @@ def cmd_get(a, fetched=False):
             continue
         d = OUT_LOCAL / key
         d.mkdir(parents=True, exist_ok=True)
+        for old in d.glob("*.jpg"):
+            old.unlink()
         out = []
         for f in sorted(files):
             env = git("show", f"origin/{BRANCH}:{f}")
