@@ -133,6 +133,13 @@ def to_jpeg(raw: bytes) -> bytes:
     return buf.getvalue()
 
 
+def dhash(jpg: bytes) -> int:
+    from PIL import Image
+    im = Image.open(io.BytesIO(jpg)).convert("L").resize((9, 8))
+    px = list(im.getdata())
+    return sum(1 << i for i in range(64) if px[(i // 8) * 9 + i % 8] > px[(i // 8) * 9 + i % 8 + 1])
+
+
 def cmd_fetch(a):
     import requests
     from scrape import HEADERS
@@ -148,7 +155,7 @@ def cmd_fetch(a):
             for f in d.glob("*"):
                 f.unlink()
         d.mkdir(parents=True, exist_ok=True)
-        n = 0
+        n, hashes = 0, []
         for u in urls:
             try:
                 r = requests.get(u, headers={**HEADERS, "Referer": "https://www.olx.ua/"}, timeout=30)
@@ -157,9 +164,13 @@ def cmd_fetch(a):
             except Exception as e:  # noqa: BLE001
                 log(f"  ! {u}: {e}")
                 continue
+            h = dhash(jpg)
+            if any(bin(h ^ x).count("1") <= 12 for x in hashes):
+                continue  # те саме фото з дубліката на іншому сайті
+            hashes.append(h)
             n += 1
             (d / f"{n:02d}.jpg.enc").write_text(vault.encrypt_bytes(jpg, pw), encoding="utf-8")
-        meta = {"id": key, "source": target, "count": n, "found": len(urls), "fetched": dt.datetime.utcnow().isoformat(timespec="seconds") + "Z"}
+        meta = {"id": key, "source": target, "count": n, "found": len(urls), "fetched": dt.datetime.now(dt.timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds") + "Z"}
         (d / "meta.json.enc").write_text(vault.encrypt_bytes(json.dumps(meta, ensure_ascii=False).encode(), pw), encoding="utf-8")
         summary.append(f"{key}: {n}/{len(urls)}")
         log(f"{key}: збережено {n} з {len(urls)}")
@@ -231,7 +242,7 @@ def gh(*args) -> str:
 
 def cmd_pull(a):
     R = f"repos/{REPO}/actions"
-    started = dt.datetime.utcnow() - dt.timedelta(seconds=5)
+    started = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(seconds=5)
     gh("-X", "POST", f"{R}/workflows/{WORKFLOW}/dispatches", "-f", "ref=main", "-f", f"inputs[targets]={' '.join(a.targets)}")
     log("воркфлоу запущено, чекаю…")
     run = None
