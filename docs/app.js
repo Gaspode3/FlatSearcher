@@ -50,6 +50,20 @@
     return ids.length ? { ids, title: m[2] ? decodeURIComponent(m[2]) : "" } : null;
   };
   let pick = pickFromHash();
+  // Добірка, яку збираю сам (📋 на картці) — окремо для купівлі й оренди
+  const basketKey = () => STORE + "-basket-" + deal;
+  const getBasket = () => { try { return JSON.parse(localStorage.getItem(basketKey()) || "[]"); } catch { return []; } };
+  const setBasket = (ids) => { try { localStorage.setItem(basketKey(), JSON.stringify(ids)); } catch {} paintBasketBar(); };
+  const inBasket = (id) => getBasket().includes(id);
+  const toggleBasket = (id) => { const b = getBasket(); const on = !b.includes(id); setBasket(on ? [...b, id] : b.filter((x) => x !== id)); return on; };
+  function paintBasketBar() {
+    const n = getBasket().length;
+    const bar = document.getElementById("basketbar");
+    if (!bar) return;
+    bar.hidden = !n;
+    document.body.classList.toggle("has-basket", !!n);
+    document.getElementById("basket-text").textContent = `📋 Добірка: ${n}`;
+  }
   const listLink = (ids, title) => location.origin + location.pathname + (deal === "rent" ? "#rent&list=" : "#list=")
     + ids.map(encodeURIComponent).join(",") + (title ? "&t=" + encodeURIComponent(title) : "");
   const copy = async (text, msg) => {
@@ -386,6 +400,10 @@
     open.onclick = () => { setMine(it.id, { seen: true }); seenBtn.classList.add("on"); updateCounts(); };
     node.querySelector(".share").onclick = () => share(it);
     node.querySelector(".claude").onclick = () => toClaude(dossier(it));
+    const bBtn = node.querySelector(".basket");
+    const paintB = () => { const on = inBasket(it.id); bBtn.classList.toggle("on", on); bBtn.title = on ? "Прибрати з добірки" : "Додати в добірку для надсилання"; };
+    paintB();
+    bBtn.onclick = () => { const on = toggleBasket(it.id); paintB(); toast(on ? `📋 Додано в добірку (${getBasket().length})` : "Прибрано з добірки"); };
     const seenBtn = node.querySelector(".seen");
     if (isSeen(it)) seenBtn.classList.add("on");
     seenBtn.onclick = () => {
@@ -522,6 +540,7 @@
     node.querySelector(".contact").remove();
     node.querySelector(".mine").remove();
     node.querySelector(".seen").remove();
+    node.querySelector(".basket").remove();
     const open = node.querySelector(".open");
     open.href = cx.url; open.textContent = "Відкрити ЖК";
     node.querySelector(".share").onclick = () => share(cx, cxShareText(cx));
@@ -690,6 +709,9 @@
     list.replaceChildren(...(items.length ? items.map(buildCard) : [el("p", "empty", "Цих оголошень уже немає в базі.")]));
   }
   $("focus-share").onclick = () => { if (pick) shareList(pick.ids, pick.title); };
+  $("basket-view").onclick = () => { const b = getBasket(); if (b.length) { location.hash = (deal === "rent" ? "rent&" : "") + "list=" + b.map(encodeURIComponent).join(","); window.scrollTo({ top: 0 }); } };
+  $("basket-share").onclick = () => { const b = getBasket(); if (b.length) shareList(b, ""); };
+  $("basket-clear").onclick = () => { if (confirm("Очистити добірку?")) { setBasket([]); render(); } };
 
   const clearFocus = () => { focusId = null; pick = null; history.replaceState(null, "", location.pathname + (deal === "rent" ? "#rent" : "")); };
   $("focus-clear").onclick = () => { clearFocus(); render(); };
@@ -786,6 +808,7 @@
       return;
     }
     data = datasets[d];
+    paintBasketBar();
     const upd = data.updated ? new Date(data.updated).toLocaleString("uk-UA", { dateStyle: "medium", timeStyle: "short" }) : "—";
     const c = data.criteria || {};
     $("meta").textContent = d === "rent"

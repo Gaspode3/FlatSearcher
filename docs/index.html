@@ -154,6 +154,7 @@
         <div class="actions">
           <a class="btn open" target="_blank" rel="noopener">Відкрити</a>
           <button class="btn share">Поділитись</button>
+          <button class="btn basket" title="Додати в добірку для надсилання" aria-label="Додати в добірку">📋</button>
           <button class="btn claude" title="Скопіювати все про квартиру для чату з Claude">🤖</button>
           <button class="btn seen" title="Позначити переглянутим">✓</button>
         </div>
@@ -172,6 +173,14 @@
     </article>
   </template>
 
+  <div class="basketbar" id="basketbar" hidden>
+    <span id="basket-text"></span>
+    <span class="basket-btns">
+      <button id="basket-view">Переглянути</button>
+      <button id="basket-share" class="main">🔗 Надіслати</button>
+      <button id="basket-clear" class="ghost" title="Очистити добірку">✕</button>
+    </span>
+  </div>
   <div class="toast" id="toast" hidden></div>
   <footer class="foot">Дані оновлюються автоматично раз на день. Переглянуті, статуси й нотатки зберігаються в цьому браузері.</footer>
   <script src="app.js"></script>

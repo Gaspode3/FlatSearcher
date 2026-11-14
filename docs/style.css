@@ -313,3 +313,22 @@ body[data-deal="sale"] .rent-only { display: none !important; }
 
 /* Добірка за посиланням: ховаємо фільтри й вкладки, лишаємо лише обрані картки */
 body.picking .tabs, body.picking .market, body.picking .filters { display: none; }
+
+/* Своя добірка (📋 на картці) */
+.btn.basket { flex: 0 0 46px; }
+.btn.basket.on { background: var(--accent-soft); border-color: var(--accent); }
+.basketbar {
+  position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 15;
+  width: min(560px, calc(100% - 24px)); display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 8px 8px 16px; border-radius: 999px; background: var(--ink); color: var(--bg);
+  font-weight: 700; font-size: 14px; box-shadow: 0 6px 24px rgb(0 0 0 / .25);
+}
+.basketbar[hidden] { display: none; }
+.basket-btns { display: flex; gap: 6px; }
+#basket-text { white-space: nowrap; }
+@media (max-width: 480px) { .basketbar { padding-left: 12px; font-size: 13px; } .basketbar button { padding: 7px 10px; } }
+.basketbar button { border: 0; border-radius: 999px; padding: 7px 12px; font: inherit; font-weight: 700; background: color-mix(in srgb, var(--bg) 18%, transparent); color: var(--bg); cursor: pointer; }
+.basketbar button.main { background: var(--accent); color: #fff; }
+.basketbar button.ghost { background: none; padding-inline: 8px; }
+body.has-basket { padding-bottom: 72px; }
+body.has-basket .toast { bottom: 76px; }
