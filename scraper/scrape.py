@@ -441,17 +441,38 @@ def scrape_olx(cfg: dict, rate: float, city: dict) -> list[dict]:
         return scrape_olx_mobile(cfg, rate, city)
     items: dict[str, dict] = {}
     per = 50
+    # Фільтр ціни (у гривнях, із запасом на курс), щоб сторінки API не витрачались на дорожчі
+    # квартири й новобудови: OLX віддає максимум ~1000 оголошень на один запит (offset + limit ≤ 1000).
+    price_to = None
+    if cfg["olx"].get("price_filter", True) and cfg.get("max_price_usd"):
+        price_to = int(cfg["max_price_usd"] * rate * 1.05)
+    price_from = int(cfg.get("min_price_usd", 5000) * rate) if price_to else None
     for pas in cfg["olx"].get("passes", [{"rooms": [], "pages": 10}]):
         rooms_f = pas.get("rooms") or []
+        query = pas.get("query")
         label = "+".join(str(OLX_ROOMS.get(r, r)) for r in rooms_f) + "к" if rooms_f else "усі"
-        for page in range(pas.get("pages", 10)):
+        if query:
+            label += f" «{query}»"
+        use_price = price_to is not None and pas.get("price_filter", True)
+        for page in range(min(pas.get("pages", 10), 1000 // per)):
             params = {"offset": page * per, "limit": per, "category_id": cfg["olx"].get("category_id", 1758), "city_id": oc["city_id"],
-                      "sort_by": "created_at:desc"}
+                      "sort_by": pas.get("sort_by", "created_at:desc")}
             if oc.get("region_id"):
                 params["region_id"] = oc["region_id"]
             for i, r in enumerate(rooms_f):
                 params[f"filter_enum_number_of_rooms_string[{i}]"] = r
+            if query:
+                params["query"] = query
+            if use_price:
+                params["filter_float_price:to"] = price_to
+                params["filter_float_price:from"] = price_from
             data = get("https://www.olx.ua/api/v1/offers/", params=params, as_json=True)
+            if data is None and page == 0 and use_price:
+                log(f"  OLX {label}: API не прийняв фільтр ціни — повторюю без нього")
+                use_price = False
+                params.pop("filter_float_price:to", None)
+                params.pop("filter_float_price:from", None)
+                data = get("https://www.olx.ua/api/v1/offers/", params=params, as_json=True)
             if data is None and page == 0 and not items:
                 log("  OLX API відмовив — беру мобільну версію сайту")
                 return scrape_olx_mobile(cfg, rate, city)

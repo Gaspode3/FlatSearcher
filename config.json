@@ -85,20 +85,46 @@
     "passes": [
       {
         "rooms": [
-          "dvuhkomnatnye",
-          "trehkomnatnye",
+          "dvuhkomnatnye"
+        ],
+        "pages": 20
+      },
+      {
+        "rooms": [
+          "trehkomnatnye"
+        ],
+        "pages": 20
+      },
+      {
+        "rooms": [
           "chetyrehkomnatnye"
         ],
-        "pages": 15
+        "pages": 10
+      },
+      {
+        "rooms": [],
+        "query": "австрійський",
+        "pages": 10
+      },
+      {
+        "rooms": [],
+        "query": "польський",
+        "pages": 10
+      },
+      {
+        "rooms": [],
+        "query": "сталінка",
+        "pages": 6
       },
       {
         "rooms": [],
         "pages": 4
       }
-    ]
+    ],
+    "_passes_comment": "Фільтр ціни (max_price_usd, у грн) ставиться на кожен прохід, тож 20 сторінок (=1000, межа OLX) — це вся пропозиція в бюджеті. Проходи з query — старий фонд, щоб давні оголошення теж потрапляли в базу."
   },
   "domria": {
-    "html_pages": 3,
+    "html_pages": 10,
     "enrich_per_run": 50,
     "url_templates": [
       "https://dom.ria.com/uk/prodazha-kvartir/{slug}-bez-rieltora/",
@@ -179,7 +205,8 @@
           "rooms": [],
           "pages": 10
         }
-      ]
+      ],
+      "price_filter": false
     },
     "domria": {
       "html_pages": 3,
