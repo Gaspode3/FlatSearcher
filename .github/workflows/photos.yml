@@ -1,0 +1,53 @@
+name: Фото оголошень (для Claude)
+
+on:
+  workflow_dispatch:
+    inputs:
+      targets:
+        description: "id з бази (olx-123…) або посилання на оголошення, через пробіл"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: photos
+  cancel-in-progress: false
+
+jobs:
+  photos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FS_PASSWORD: ${{ secrets.FS_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Розшифрувати базу
+        run: python scraper/vault.py decrypt
+
+      - name: Завантажити фото
+        env:
+          TARGETS: ${{ inputs.targets }}
+        run: python scraper/photos.py fetch $TARGETS --out "$RUNNER_TEMP/out"
+
+      - name: Зберегти в гілку photos
+        run: |
+          git config --global user.name "kvartyra-bot"
+          git config --global user.email "kvartyra-bot@users.noreply.github.com"
+          git clone -q --depth 1 --branch photos "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" "$RUNNER_TEMP/pb"
+          cd "$RUNNER_TEMP/pb"
+          for d in "$RUNNER_TEMP"/out/photos/*/; do
+            id=$(basename "$d"); rm -rf "photos/$id"; mkdir -p photos; cp -r "$d" "photos/$id"
+          done
+          python "$GITHUB_WORKSPACE/scraper/photos.py" prune . --keep 80
+          git add -A photos
+          git diff --cached --quiet || git commit -q -m "Фото: $(ls "$RUNNER_TEMP/out/photos" | tr '\n' ' ')"
+          for i in 1 2 3; do git push -q && break; git pull -q --rebase; done
