@@ -161,7 +161,7 @@
     "rooms_min": 1,
     "rooms_max": 10,
     "default_rooms": "2+",
-    "notify_rooms_min": 2,
+    "notify_rooms_min": 3,
     "notify_min_area_2rooms": 0,
     "spacious_area_m2": 70,
     "keep_inactive_days": 4,
