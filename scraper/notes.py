@@ -13,6 +13,7 @@ add / rm потребують доступу push (оновлюють main і п
 import argparse, json, secrets, subprocess, sys
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import vault  # noqa: E402
@@ -71,7 +72,7 @@ def commit_with(mutate, message):
 
 
 def fmt(n):
-    at = datetime.fromisoformat(n["at"].replace("Z", "+00:00")).astimezone().strftime("%d.%m.%Y %H:%M")
+    at = datetime.fromisoformat(n["at"].replace("Z", "+00:00")).astimezone(ZoneInfo("Europe/Kyiv")).strftime("%d.%m.%Y %H:%M")
     return f"- [{n['id']}] {at} · {n.get('by') or '?'}: {n['text']}"
 
 
