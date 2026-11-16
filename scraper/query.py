@@ -6,6 +6,7 @@
   python scraper/query.py search --text "австрійськ|польськ" --sort m2 --limit 30
   python scraper/query.py show olx-939341144          # повна картка
   python scraper/query.py stats                       # що в базі, коли оновлено
+  (коментарі до квартир — scraper/notes.py; show їх показує, search позначає 💬N)
 
 База в репозиторії зашифрована: query.py сам розшифровує її паролем із FS_PASSWORD або файлу .fs_password.
 --remote — завантажити зашифровану базу з сайту замість локальної.
@@ -18,8 +19,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import shortlist as S  # noqa: E402  (оцінка й константи; підтягує й приватний config)
 import vault  # noqa: E402
+import notes as N  # noqa: E402  (спільні коментарі)
 
 ROOT, SITE, CFG = S.ROOT, S.SITE, S.CFG
+NOTE_COUNTS = {}
 FILES = {"sale": "docs/data/listings.json", "rent": "docs/data/rent.json"}
 CENTER = next((c.get("center") for c in CFG.get("cities", []) if c.get("key") == "lviv"), [49.8419, 24.0315])
 FLAG_ICONS = {"old_fund": "🏛", "owner": "👤", "needs_repair": "🔨", "fresh_renovation": "✨", "spacious": "📐",
@@ -129,6 +132,7 @@ def short(row, mode):
     price = f"${p:,}".replace(",", " ") + ("/міс" if mode == "rent" else f" (${p / ar:.0f}/м²)" if ar else "")
     d = f"{'~' if row['approx'] else ''}{row['km']:g} км" if row["km"] is not None else "? км"
     flags = "".join(v for k, v in FLAG_ICONS.items() if i.get("flags", {}).get(k))
+    if NOTE_COUNTS.get(i["id"]): flags += f" 💬{NOTE_COUNTS[i['id']]}"
     where = ", ".join(x for x in (i.get("district"), i.get("street") or (i.get("address") if i.get("address") != "Львів" else None)) if x)[:50]
     return (f"- **{i['id']}** · бал {s if s is not None else '—'} · {price} · {i.get('rooms')}к · {ar or '?'} м² · "
             f"пов. {i.get('floor') or '?'}/{i.get('floors') or '?'} · {d} · {where or '—'} {flags}\n"
@@ -188,6 +192,9 @@ def cmd_show(a):
         ph = i.get("photos") or []
         print(f"- фото ({len(ph)}): " + " ".join(ph[:a.photos]))
         print(f"\nОпис:\n{i.get('description') or '—'}\n")
+        cm = N.for_id(i["id"])
+        if cm:
+            print(f"Коментарі ({len(cm)}):\n" + "\n".join(N.fmt(n) for n in cm) + "\n")
 
 
 def cmd_stats(a):
@@ -251,6 +258,8 @@ def main():
     lk.add_argument("ids", nargs="+"); lk.add_argument("--title", "-t", default="")
     lk.add_argument("--mode", choices=["sale", "rent"], default="sale")
     ARGS = p.parse_args()
+    global NOTE_COUNTS
+    NOTE_COUNTS = N.counts() if ARGS.cmd == "search" else {}
     {"search": cmd_search, "show": cmd_show, "stats": cmd_stats, "link": cmd_link}[ARGS.cmd](ARGS)
 
 

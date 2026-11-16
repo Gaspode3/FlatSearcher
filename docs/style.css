@@ -332,3 +332,30 @@ body.picking .tabs, body.picking .market, body.picking .filters { display: none;
 .basketbar button.ghost { background: none; padding-inline: 8px; }
 body.has-basket { padding-bottom: 72px; }
 body.has-basket .toast { bottom: 76px; }
+
+/* спільні коментарі */
+.notes { border-top: 1px dashed var(--line); padding-top: 10px; display: grid; gap: 8px; }
+.notes-h { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+.notes-n { color: var(--accent); }
+.nlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.nlist li { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; font-size: 14px; }
+.nlist li.local { border-style: dashed; }
+.nlist .nmeta { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+.nlist .nmeta b { color: var(--ink); }
+.nlist .ntxt { white-space: pre-wrap; overflow-wrap: anywhere; }
+.nlist .nact { margin-left: auto; border: 0; background: none; color: var(--muted); cursor: pointer; font: inherit; font-size: 12px; padding: 0 2px; }
+.nlist .nact:hover { color: var(--accent); }
+.nform { display: flex; gap: 8px; align-items: flex-end; }
+.nform textarea { flex: 1; font: inherit; font-size: 14px; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; resize: vertical; min-height: 40px; }
+.nform button[disabled] { opacity: .5; }
+.ghdlg { max-width: 440px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); color: var(--ink); padding: 20px; }
+.ghdlg::backdrop { background: rgba(0,0,0,.4); }
+.ghdlg form { display: grid; gap: 10px; }
+.ghdlg h3, .ghdlg p { margin: 0; }
+.ghdlg .hint { font-size: 13px; color: var(--muted); }
+.ghdlg label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.ghdlg input { font: inherit; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); }
+.ghbtns { display: flex; justify-content: flex-end; gap: 8px; }
+.ghbtns button { font: inherit; padding: 9px 14px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; cursor: pointer; }
+.ghbtns button.ghost { background: none; color: var(--muted); border: 1px solid var(--line); }
+.nform .btn { flex: 0 0 auto; padding: 9px 14px; }

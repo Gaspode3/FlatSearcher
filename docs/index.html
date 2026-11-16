@@ -167,7 +167,14 @@
             <option>Відхилено</option>
             <option>Продано</option>
           </select>
-          <input class="note" placeholder="Нотатка">
+        </div>
+        <div class="notes">
+          <p class="notes-h">💬 Коментарі <span class="notes-n"></span></p>
+          <ul class="nlist"></ul>
+          <form class="nform">
+            <textarea class="ntext" rows="2" placeholder="Що дізнались: дзвінок, перегляд, документи… (бачать усі й Claude)"></textarea>
+            <button class="btn nadd" type="submit">Додати</button>
+          </form>
         </div>
       </div>
     </article>
@@ -181,8 +188,19 @@
       <button id="basket-clear" class="ghost" title="Очистити добірку">✕</button>
     </span>
   </div>
+  <dialog class="ghdlg" id="gh-dlg">
+    <form method="dialog" id="gh-form">
+      <h3>Коментарі: доступ до запису</h3>
+      <p>Коментарі зберігаються зашифрованими в репозиторії, тож для запису потрібен GitHub-токен. Вводиться один раз на цьому пристрої.</p>
+      <label>Ваше ім'я (підпис під коментарем)<input id="gh-who" required placeholder="Напр. Сергій"></label>
+      <label>GitHub-токен<input id="gh-token" required autocomplete="off" placeholder="github_pat_…"></label>
+      <p class="hint">Створити: <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">github.com → Fine-grained token</a> → Repository access: <b>Only select repositories → FlatSearcher</b> → Permissions → <b>Contents: Read and write</b>.</p>
+      <p class="lock-err" id="gh-err" hidden></p>
+      <div class="ghbtns"><button value="cancel" formnovalidate class="ghost">Скасувати</button><button id="gh-save" value="ok">Зберегти</button></div>
+    </form>
+  </dialog>
   <div class="toast" id="toast" hidden></div>
-  <footer class="foot">Дані оновлюються автоматично раз на день. Переглянуті, статуси й нотатки зберігаються в цьому браузері.</footer>
+  <footer class="foot">Дані оновлюються автоматично раз на день. Переглянуті й статуси зберігаються в цьому браузері; коментарі — спільні (у зашифрованому репозиторії).</footer>
   <script src="app.js"></script>
 </body>
 </html>

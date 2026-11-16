@@ -169,8 +169,10 @@
     kv("Також на", (it.also_on || []).map((x) => `${x.source}: ${x.url}`));
     kv("Наша картка", cardLink(it));
     const m = mine[it.id] || {};
-    kv("Мій статус", m.status); kv("Моя нотатка", m.note); kv("В обраних", m.fav ? "так" : null);
+    kv("Мій статус", m.status); kv("Моя нотатка (лише в цьому браузері)", m.note); kv("В обраних", m.fav ? "так" : null);
     if (it.description) L.push("", "### Опис з оголошення", it.description);
+    const cm = noteList(it.id);
+    if (cm.length) L.push("", `### Наші коментарі (${cm.length})`, ...cm.map((n) => `- ${noteDate(n.at)} · ${n.by || "?"}: ${n.text}`));
     if ((it.photos || []).length) L.push("", `### Фото (${it.photos.length})`, ...it.photos.map((u) => `- ${u}`));
     return L.join("\n");
   };
@@ -417,9 +419,7 @@
     const sel = node.querySelector(".status");
     sel.value = st.status || "";
     sel.onchange = () => { setMine(it.id, { status: sel.value, seen: true }); render(); };
-    const note = node.querySelector(".note");
-    note.value = st.note || "";
-    note.onchange = () => setMine(it.id, { note: note.value });
+    paintNotes(node, it);
     return node;
   }
 
@@ -583,7 +583,7 @@
 
   // Пошук: усі слова запиту мають знайтися в назві/описі/адресі/вулиці/районі/будинку/id (регістр і апострофи не важливі)
   const norm = (x) => String(x || "").toLowerCase().replace(/['’`ʼ]/g, "").replace(/ё/g, "е");
-  const haystack = (it) => norm([it.id, it.title, it.address, it.street, it.district, it.building, it.seller, it.description].join(" "));
+  const haystack = (it) => norm([it.id, it.title, it.address, it.street, it.district, it.building, it.seller, it.description, ...noteList(it.id).map((n) => n.text)].join(" "));
 
   function filtered() {
     const q = norm($("f-q").value).trim();
@@ -742,7 +742,7 @@
     if (!keys.has(id)) {
       const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveKey"]);
       keys.set(id, crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: b64(salt), iterations: iter },
-        base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]));
+        base, { name: "AES-GCM", length: 256 }, false, ["decrypt", "encrypt"]));
     }
     return keys.get(id);
   }
@@ -758,6 +758,137 @@
     } catch { throw new WrongPassword(); }
     const text = await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
     return JSON.parse(text);
+  }
+
+  // ---------- спільні коментарі: docs/data/notes.json.enc, читаються й пишуться через GitHub API (див. scraper/notes.py)
+  const REPO = "Gaspode3/FlatSearcher", NOTES_PATH = "docs/data/notes.json.enc";
+  const GH_KEY = STORE + "-gh", WHO_KEY = STORE + "-who";
+  const lsGet = (k) => { try { return localStorage.getItem(k) || ""; } catch { return ""; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+  let notes = {};
+  let notesReady = false;
+  const noteList = (id) => notes[id] || [];
+  const noteDate = (at) => new Date(at).toLocaleString("uk-UA", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const b64enc = (bytes) => { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); };
+  async function decryptEnv(env) {
+    let raw;
+    try { raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(env.iv) }, await deriveKey(env.salt, env.iter), b64(env.ct)); }
+    catch { throw new WrongPassword(); }
+    return JSON.parse(await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream("gzip"))).text());
+  }
+  async function encryptEnv(obj, salt, iter) {
+    const gz = new Uint8Array(await new Response(new Blob([JSON.stringify(obj, null, 1)]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer());
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await deriveKey(salt, iter), gz));
+    return { v: 1, kdf: "PBKDF2-SHA256", iter, salt, iv: b64enc(iv), ct: b64enc(ct) };
+  }
+  const ghHeaders = (auth) => {
+    const h = { Accept: "application/vnd.github+json" };
+    if (auth && lsGet(GH_KEY)) h.Authorization = "Bearer " + lsGet(GH_KEY);
+    return h;
+  };
+  // Свіжий стан із репозиторію (не з Pages — там зміни з'являються із затримкою)
+  async function ghNotes(auth) {
+    const r = await fetch(`https://api.github.com/repos/${REPO}/contents/${NOTES_PATH}?ref=main&ts=${Date.now()}`, { headers: ghHeaders(auth), cache: "no-store" });
+    if (r.status === 404) return { sha: null, env: null };
+    if (!r.ok) { const e = new Error("GitHub " + r.status); e.status = r.status; throw e; }
+    const j = await r.json();
+    return { sha: j.sha, env: JSON.parse(new TextDecoder().decode(b64(j.content.replace(/\s/g, "")))) };
+  }
+  async function loadNotes() {
+    let d = null;
+    try { const { env } = await ghNotes(!!lsGet(GH_KEY)); d = env ? await decryptEnv(env) : { notes: {} }; }
+    catch (e) { if (e instanceof WrongPassword) return; try { d = await fetchEnc("data/notes.json"); } catch {} }
+    notes = d?.notes || {};
+    notesReady = true;
+    if (data.items.length) render();
+  }
+  async function mutateNotes(fn, message) {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const { sha, env } = await ghNotes(true);
+      const d = env ? await decryptEnv(env) : { v: 1, notes: {} };
+      d.notes = d.notes || {};
+      fn(d);
+      let salt = env?.salt, iter = env?.iter || 310000;
+      if (!salt) salt = (await (await fetch("data/salt.txt")).text()).trim();
+      const enc = await encryptEnv(d, salt, iter);
+      const body = { message, branch: "main", content: b64enc(new TextEncoder().encode(JSON.stringify(enc))) };
+      if (sha) body.sha = sha;
+      const r = await fetch(`https://api.github.com/repos/${REPO}/contents/${NOTES_PATH}`, { method: "PUT", headers: { ...ghHeaders(true), "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (r.ok) { notes = d.notes; notesReady = true; return; }
+      if (r.status === 409 || r.status === 422) continue;  // хтось записав одночасно — беремо свіже й повторюємо
+      const e = new Error("GitHub " + r.status); e.status = r.status; throw e;
+    }
+    throw new Error("не вдалося записати після кількох спроб");
+  }
+  // Діалог токена/імені; повертає true, якщо все є
+  function ensureWriter() {
+    if (lsGet(GH_KEY) && lsGet(WHO_KEY)) return Promise.resolve(true);
+    const dlg = $("gh-dlg");
+    $("gh-who").value = lsGet(WHO_KEY); $("gh-token").value = lsGet(GH_KEY); $("gh-err").hidden = true;
+    return new Promise((resolve) => {
+      dlg.onclose = () => {
+        if (dlg.returnValue !== "ok") return resolve(false);
+        lsSet(WHO_KEY, $("gh-who").value.trim()); lsSet(GH_KEY, $("gh-token").value.trim());
+        resolve(!!(lsGet(GH_KEY) && lsGet(WHO_KEY)));
+      };
+      dlg.returnValue = ""; dlg.showModal();
+    });
+  }
+  const writeErr = (e) => {
+    if (e?.status === 401 || e?.status === 403 || e?.status === 404) { lsSet(GH_KEY, ""); toast("Токен не підходить (потрібен доступ Contents: write до FlatSearcher) — введіть заново"); }
+    else toast("Не вдалося зберегти коментар: " + (e?.message || e));
+  };
+  const newNote = (text) => ({ id: Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => b.toString(16).padStart(2, "0")).join(""), at: new Date().toISOString().replace(/\.\d+Z$/, "Z"), by: lsGet(WHO_KEY), text });
+  async function addNote(id, text) {
+    if (!(await ensureWriter())) return false;
+    const n = newNote(text);
+    try { await mutateNotes((d) => { (d.notes[id] = d.notes[id] || []).push(n); }, `Коментар до ${id} (${n.by})`); return true; }
+    catch (e) { writeErr(e); return false; }
+  }
+  function paintNotes(node, it) {
+    const box = node.querySelector(".notes");
+    const list = box.querySelector(".nlist");
+    const items = noteList(it.id);
+    box.querySelector(".notes-n").textContent = items.length ? `(${items.length})` : notesReady ? "" : "…";
+    list.replaceChildren();
+    for (const n of items) {
+      const li = el("li"), meta = el("div", "nmeta");
+      meta.append(el("b", null, n.by || "?"), el("span", null, noteDate(n.at)));
+      const del = el("button", "nact", "✕");
+      del.title = "Видалити коментар";
+      del.onclick = async () => {
+        if (!confirm("Видалити коментар?")) return;
+        if (!(await ensureWriter())) return;
+        try { await mutateNotes((d) => { d.notes[it.id] = (d.notes[it.id] || []).filter((x) => x.id !== n.id); if (!d.notes[it.id].length) delete d.notes[it.id]; }, `Видалено коментар до ${it.id}`); toast("Видалено"); paintNotes(node, it); }
+        catch (e) { writeErr(e); }
+      };
+      meta.append(del);
+      li.append(meta, el("div", "ntxt", n.text));
+      list.append(li);
+    }
+    const local = (mine[it.id] || {}).note;
+    if (local) {  // стара нотатка з цього браузера — запропонувати зробити спільною
+      const li = el("li", "local"), meta = el("div", "nmeta");
+      meta.append(el("b", null, "📝 Нотатка лише в цьому браузері"));
+      const pub = el("button", "nact", "Зробити спільною");
+      pub.onclick = async () => { if (await addNote(it.id, local)) { setMine(it.id, { note: "" }); toast("💬 Збережено як коментар"); paintNotes(node, it); } };
+      const del = el("button", "nact", "✕");
+      del.onclick = () => { if (confirm("Видалити локальну нотатку?")) { setMine(it.id, { note: "" }); paintNotes(node, it); } };
+      meta.append(pub, del);
+      li.append(meta, el("div", "ntxt", local));
+      list.append(li);
+    }
+    const form = box.querySelector(".nform"), ta = form.querySelector(".ntext"), btn = form.querySelector(".nadd");
+    ta.onkeydown = (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) form.requestSubmit(); };
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const text = ta.value.trim();
+      if (!text) return;
+      btn.disabled = true; btn.textContent = "…";
+      if (await addNote(it.id, text)) { ta.value = ""; setMine(it.id, { seen: true }); toast("💬 Коментар додано"); paintNotes(node, it); }
+      btn.disabled = false; btn.textContent = "Додати";
+    };
   }
 
   const datasets = {};
@@ -808,6 +939,7 @@
       return;
     }
     data = datasets[d];
+    if (!notesReady && !loadNotes.started) { loadNotes.started = true; loadNotes(); }
     paintBasketBar();
     const upd = data.updated ? new Date(data.updated).toLocaleString("uk-UA", { dateStyle: "medium", timeStyle: "short" }) : "—";
     const c = data.criteria || {};
